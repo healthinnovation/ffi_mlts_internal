@@ -18,8 +18,8 @@ editor_options:
 ## Global options
 knitr::opts_chunk$set(
   cache = TRUE,
-  warnings = FALSE,
-  messages = FALSE
+  warning = FALSE,
+  message = FALSE
 )
 
 library(tidyverse)
@@ -466,7 +466,7 @@ communities_distances <- enframe(communities_distances) %>%
 
 Las Comunidades mas cercanas y mas lejanas por distrito:
 
-```{r eval=FALSE}
+```{r}
 communities_distances %>%
   mutate(
     ffi_h_district = communities_sf$ffi_h_district
@@ -3567,6 +3567,8 @@ household_communities_leaft <- ffi_household_gps %>%
   #   opacity = 1
   # ) %>%
   leaflet.extras::addResetMapButton()
+
+household_communities_leaft
 ```
 
 
