@@ -1,0 +1,55 @@
+---
+title: "Survey Analysis"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::downcute:
+    highlight: kate
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r setup, include=FALSE}
+## Global options
+knitr::opts_chunk$set(cache = TRUE)
+library(tidyverse)
+library(survey)
+```
+
+# Import data
+
+```{r}
+ffi_total <- readRDS("01_data/processed/ffi_total.rds")
+```
+
+
+# Settings survey
+
+```{r eval=FALSE}
+ffi_total <- ffi_total %>%
+  mutate(
+    count = 1
+  )
+
+design <- svydesign(
+  id = ~ ffi_is_health_facility_name + ffi_is_community + ffi_is_cod_household,
+  strata = ~ ffi_is_district,
+  weights = ~ ffi_weights_fixed,
+  nest = TRUE,
+  fpc = ~ ffi_N_hf + ffi_N_community + ffi_N_households,
+  data = ffi_total
+)
+
+summary(design)
+```
+
+```{r eval=FALSE}
+svymean(~pv_historic, design)
+
+svytotal(~count, design, deff = TRUE)
+svyby(~count, ~ffi_is_district, design, svytotal)
+svyby(~count, ~ffi_is_health_facility_name, design, svytotal)
+svyby(~count, ~ffi_is_community, design, svytotal)
+```
+
+
