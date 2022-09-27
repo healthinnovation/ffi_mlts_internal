@@ -160,50 +160,62 @@ ffi_total <- ffi_total %>%
     ),
     only_pv_exposure = case_when(
       pv_exposure == "Positive" & pf_exposure == "Negative" ~ "Positive", 
+      is.na(pv_exposure) & is.na(pf_exposure) ~ NA_character_,
       TRUE ~ "Negative"
     ),
     only_pf_exposure = case_when(
       pf_exposure == "Positive" & pv_exposure == "Negative" ~ "Positive", 
+      is.na(pf_exposure) & is.na(pv_exposure) ~ NA_character_,
       TRUE ~ "Negative"
     ),
     pv_pf_exposure = case_when(
       pv_exposure == "Positive" & pf_exposure == "Positive" ~ "Positive",
+      is.na(pv_exposure) & is.na(pf_exposure) ~ NA_character_,
       TRUE ~ "Negative"
     ),
     freedom_malaria = case_when(
       pv_exposure == "Negative" & pf_exposure == "Negative" ~ "Positive", 
+      is.na(pv_exposure) & is.na(pf_exposure) ~ NA_character_,
       TRUE ~ "Negative"
     ),
     only_pv_recent = case_when(
       pv_recent == "Positive" & pf_recent == "Negative" ~ "Positive", 
+      is.na(pv_recent) & is.na(pf_recent) ~ NA_character_,
       TRUE ~ "Negative"
     ),
     only_pf_recent = case_when(
       pf_recent == "Positive" & pv_recent == "Negative" ~ "Positive", 
+      is.na(pf_recent) & is.na(pv_recent) ~ NA_character_,
       TRUE ~ "Negative"
     ),
     pv_pf_recent = case_when(
       pv_recent == "Positive" & pf_recent == "Positive" ~ "Positive",
+      is.na(pv_recent) & is.na(pf_recent) ~ NA_character_,
       TRUE ~ "Negative"
     ),
     freedom_malaria_recent = case_when(
       pv_recent == "Negative" & pf_recent == "Negative" ~ "Positive", 
+      is.na(pv_recent) & is.na(pf_recent) ~ NA_character_,
       TRUE ~ "Negative"
     ),
     only_pv_historic = case_when(
       pv_historic == "Positive" & pf_historic == "Negative" ~ "Positive", 
+      is.na(pv_historic) & is.na(pf_historic) ~ NA_character_,
       TRUE ~ "Negative"
     ),
     only_pf_historic = case_when(
       pf_historic == "Positive" & pv_historic == "Negative" ~ "Positive", 
+      is.na(pf_historic) & is.na(pv_historic) ~ NA_character_,
       TRUE ~ "Negative"
     ),
     pv_pf_historic = case_when(
       pv_historic == "Positive" & pf_historic == "Positive" ~ "Positive",
+      is.na(pv_historic) & is.na(pf_historic) ~ NA_character_,
       TRUE ~ "Negative"
     ),
     freedom_malaria_historic = case_when(
       pv_historic == "Negative" & pf_historic == "Negative" ~ "Positive", 
+      is.na(pv_historic) & is.na(pf_historic) ~ NA_character_,
       TRUE ~ "Negative"
     ),
     across(c(pv_exposure:freedom_malaria_historic), factor)
