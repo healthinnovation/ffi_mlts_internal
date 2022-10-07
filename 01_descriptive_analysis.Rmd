@@ -434,8 +434,100 @@ table3 %>%
   flextable::save_as_docx(path = "./02_output/reports/table3.docx")
 ```
 
+# Distance Group about communities (Method Sampling)
 
-# Distance communities and regional Hospital
+```{r}
+communities_sf <- ffi_household %>%
+  select(
+    ffi_h_district,
+    ffi_h_health_facility_name,
+    ffi_h_code_community,
+    ffi_h_community,
+    ffi_gps_long,
+    ffi_gps_lat
+  ) %>%
+  st_as_sf(
+    coords = c("ffi_gps_long", "ffi_gps_lat"),
+    crs = 4326
+  ) %>%
+  group_by(ffi_h_district, ffi_h_health_facility_name, ffi_h_code_community, ffi_h_community) %>%
+  summarise() %>%
+  st_centroid()
+
+names_hf <- ffi_household %>% 
+  count(ffi_h_health_facility_name) %>% 
+  pull(ffi_h_health_facility_name)
+
+hf_shp <- readRDS("01_data/raw/HF_shp.rds")
+
+hf_shp <- hf_shp %>% 
+  filter(`Health Facility Name` %in% names_hf) %>% 
+  select(District, 
+         ffi_h_health_facility_name = `Health Facility Name`)
+```
+
+## Distance communities and their HF's
+
+```{r}
+communities_distances_hf_sampling <- communities_sf %>% 
+  ungroup() %>% 
+  st_transform(crs = 32718) %>% 
+  st_distance(
+    hf_shp %>% 
+      st_transform(crs = 32718)
+  ) %>% 
+  as_tibble() 
+
+names(communities_distances_hf_sampling) <- hf_shp$ffi_h_health_facility_name
+
+communities_distances_hf_sampling <- communities_distances_hf_sampling %>% 
+  mutate(
+    ffi_is_community = communities_sf$ffi_h_community,
+    ffi_is_district = communities_sf$ffi_h_district,
+    .before = 1
+  ) %>% 
+  pivot_longer(
+    cols = -c(ffi_is_community, ffi_is_district),
+    names_to = "ffi_is_health_facility_name",
+    values_to = "distance_to_hf_sampl"
+  ) %>% 
+  mutate(distance_to_hf_sampl = as.numeric(distance_to_hf_sampl))
+
+communities_distances_hf_sampling_cat <- communities_sf %>% 
+  as_tibble() %>% 
+  ungroup() %>% 
+  select(
+    ffi_is_district = ffi_h_district,
+    ffi_is_health_facility_name = ffi_h_health_facility_name, 
+    ffi_is_community = ffi_h_community
+  ) %>% 
+  left_join(
+    communities_distances_hf_sampling
+  )
+
+communities_distances_hf_sampling_cat <- communities_distances_hf_sampling_cat %>% 
+  group_by(ffi_is_health_facility_name) %>% 
+  mutate(
+    distance_to_hf_sampl = as.numeric(cut_number(distance_to_hf_sampl, 4)),
+    distance_to_hf_sampl = factor(distance_to_hf_sampl, 
+                                  labels = c("Proximate", "Moderate",
+                                             "Distant", "Extra Distant"))
+  ) %>% 
+  ungroup()
+```
+
+Update info:
+
+```{r}
+ffi_total <- ffi_total %>% 
+  left_join(
+    communities_distances_hf_sampling_cat
+  ) 
+```
+
+
+
+## Distance communities and Regional Hospital
 
 ```{r}
 iquitos_centro <- tibble(
@@ -446,57 +538,56 @@ iquitos_centro <- tibble(
   st_as_sf(coords = c("Longitude", "Latitude"), crs = 4326) %>%
   st_transform(crs = 32718)
 
-communities_sf <- ffi_household %>%
-  select(
-    ffi_h_district,
-    ffi_h_code_community,
-    ffi_h_community,
-    ffi_gps_long,
-    ffi_gps_lat
-  ) %>%
-  st_as_sf(
-    coords = c("ffi_gps_long", "ffi_gps_lat"),
-    crs = 4326
-  ) %>%
-  group_by(ffi_h_district, ffi_h_code_community, ffi_h_community) %>%
-  summarise() %>%
-  st_centroid()
-  
-
-communities_distances <- communities_sf %>%
+communities_distances_rh_sampling <- communities_sf %>%
   st_transform(crs = 32718) %>%
   st_distance(iquitos_centro)
 
-communities_distances <- enframe(communities_distances) %>%
+communities_distances_rh_sampling <- enframe(communities_distances_rh_sampling) %>%
   mutate(
     ffi_is_cod_com = communities_sf$ffi_h_code_community,
     ffi_is_community = communities_sf$ffi_h_community,
-    distance = as.numeric(value),
-    ffi_h_district = communities_sf$ffi_h_district
+    distance_to_rh_sampl = as.numeric(value),
+    ffi_is_district = communities_sf$ffi_h_district
   ) %>%
-  select(-c(name, value))
+  select(-c(name, value)) %>% 
+  group_by(ffi_is_district) %>% 
+  mutate(
+    distance_to_rh_sampl = as.numeric(cut_number(distance_to_rh_sampl, 4)),
+    distance_to_rh_sampl = factor(distance_to_rh_sampl, 
+                                  labels = c("Proximate", "Moderate",
+                                             "Distant", "Extra Distant"))
+  ) %>% 
+  ungroup()
 ```
 
 Las Comunidades mas cercanas y mas lejanas por distrito:
 
 ```{r eval=FALSE}
-communities_distances %>%
-  group_by(ffi_h_district) %>%
-  slice_min(distance, n = 1) %>%
+communities_distances_rh_sampling %>%
+  group_by(ffi_is_district) %>%
+  slice_min(distance_to_rh_sampl, n = 1) %>%
   bind_rows(
-    communities_distances %>%
+    communities_distances_rh_sampling %>%
       mutate(
-        ffi_h_district = communities_sf$ffi_h_district
+        ffi_is_district = communities_sf$ffi_h_district
       ) %>%
-      group_by(ffi_h_district) %>%
-      slice_max(distance, n = 1)
+      group_by(ffi_is_district) %>%
+      slice_max(distance_to_rh_sampl, n = 1)
   ) %>%
-  arrange(ffi_h_district, distance)
+  arrange(ffi_is_district, distance_to_rh_sampl)
 ```
 
 
-# Distance Group about communities
+Update info:
 
+```{r}
+ffi_total <- ffi_total %>% 
+  left_join(
+    communities_distances_rh_sampling 
+  ) 
+```
+
+# Distance Group about communities (Method Census)
 
 ```{r}
 comunidades_info_total <- readRDS("01_data/raw/Información poblacional comunidades.RData")
@@ -520,25 +611,36 @@ comunidades_info_total <- comunidades_info_total %>%
         "GEOMETRY"
         ),
       TRUE ~ st_cast(geometry, "GEOMETRY"))
-  ) %>% 
+  )
+  
+
+comunidades_info_adic <- comunidades_info_total %>% 
+  filter(st_is_empty(geometry)) %>% 
+  distinct(MNOMCP, .keep_all = TRUE) %>% 
+  filter(`Health Facility Name` %in% hf_shp$ffi_h_health_facility_name) %>% 
+  select(-geometry) %>% 
+  left_join(
+    communities_sf %>% 
+      select(
+        District = ffi_h_district,
+        `Health Facility Name` = ffi_h_health_facility_name,
+        MNOMCP = ffi_h_community,
+        geometry
+      ) %>% 
+      as_tibble()
+  )
+
+comunidades_info_total <- comunidades_info_total %>% 
   filter(!st_is_empty(geometry)) %>% 
-  distinct(MNOMCP, .keep_all = TRUE)
+  distinct(MNOMCP, .keep_all = TRUE) %>% 
+  bind_rows(
+    comunidades_info_adic
+  )
 ```
 
 ## Distance communities and their HF's
 
 ```{r}
-names_hf <- ffi_household %>% 
-  count(ffi_h_health_facility_name) %>% 
-  pull(ffi_h_health_facility_name)
-
-hf_shp <- readRDS("01_data/raw/HF_shp.rds")
-
-hf_shp <- hf_shp %>% 
-  filter(`Health Facility Name` %in% names_hf) %>% 
-  select(District, 
-         ffi_h_health_facility_name = `Health Facility Name`)
-
 communities_distances_hf <- comunidades_info_total %>% 
   filter(`Health Facility Name` %in% hf_shp$ffi_h_health_facility_name) %>% 
   st_as_sf(crs = 4326) %>% 
@@ -568,11 +670,11 @@ communities_distances_hf <- communities_distances_hf %>%
   pivot_longer(
     cols = -c(ffi_is_community, ffi_is_district),
     names_to = "ffi_is_health_facility_name",
-    values_to = "distance_to_hf"
+    values_to = "distance_to_hf_census"
   ) %>% 
-  mutate(distance_to_hf = as.numeric(distance_to_hf))
+  mutate(distance_to_hf_census = as.numeric(distance_to_hf_census))
 
-communities_distances_hf_cat <- comunidades_info_total %>% 
+communities_distances_hf_total <- comunidades_info_total %>% 
   filter(`Health Facility Name` %in% hf_shp$ffi_h_health_facility_name) %>% 
   select(
     ffi_is_district = District,
@@ -584,12 +686,12 @@ communities_distances_hf_cat <- comunidades_info_total %>%
   )
   
   
-communities_distances_hf_cat <- communities_distances_hf_cat %>% 
+communities_distances_hf_cat <- communities_distances_hf_total %>% 
   filter(ffi_is_health_facility_name != "SOLEDAD DE VILLA BELEN") %>% 
   group_by(ffi_is_health_facility_name) %>% 
   mutate(
-    distance_to_hf = as.numeric(cut_number(distance_to_hf, 4)),
-    distance_to_hf = factor(distance_to_hf, 
+    distance_to_hf_census = as.numeric(cut_number(distance_to_hf_census, 4)),
+    distance_to_hf_census = factor(distance_to_hf_census, 
                             labels = c("Proximate", "Moderate",
                                        "Distant", "Extra Distant"))
   ) %>% 
@@ -597,7 +699,7 @@ communities_distances_hf_cat <- communities_distances_hf_cat %>%
     communities_distances_hf_total %>% 
       filter(ffi_is_health_facility_name == "SOLEDAD DE VILLA BELEN") %>% 
       mutate(
-        distance_to_hf = "Moderate"
+        distance_to_hf_census = "Moderate"
       )
   )
 ```
@@ -624,7 +726,7 @@ communities_distances_rh <- comunidades_info_total %>%
   enframe() %>% 
   mutate(
     ffi_is_community = comunidades_info_total$MNOMCP,
-    distance_rh_bydistr = as.numeric(value),
+    distance_to_rh_census = as.numeric(value),
     ffi_is_district = comunidades_info_total$District
   ) %>%
   select(-c(name, value))
@@ -632,12 +734,12 @@ communities_distances_rh <- comunidades_info_total %>%
 
 ```{r}
 communities_distances_rh_cat <- communities_distances_rh %>% 
-  drop_na(distance_rh_bydistr) %>% 
-  arrange(ffi_is_district, distance_rh_bydistr) %>% 
+  drop_na(distance_to_rh_census) %>% 
+  arrange(ffi_is_district, distance_to_rh_census) %>% 
   group_by(ffi_is_district) %>% 
   mutate(
-    distance_rh_bydistr = as.numeric(cut_number(distance_rh_bydistr, 4)),
-    distance_rh_bydistr = factor(distance_rh_bydistr, 
+    distance_to_rh_census = as.numeric(cut_number(distance_to_rh_census, 4)),
+    distance_to_rh_census = factor(distance_to_rh_census, 
                             labels = c("Proximate", "Moderate",
                                        "Distant", "Extra Distant"))
   )
@@ -4017,18 +4119,20 @@ ggsave(
 
 ## Relation with distance category towards HF and Regional Hospital
 
-### Towards HF
+### Method Census for distance categories
+
+#### Towards HF
 
 ```{r}
-sero_timeofmalaria_district_distance_hf <- seropositivy_summarise(
+sero_timeofmalaria_district_distance_hf_census <- seropositivy_summarise(
     ffi_total,
     "timeofmalaria",
     age_cat,
-    distance_to_hf
+    distance_to_hf_census
   ) %>%
   ungroup() %>% 
   mutate(
-    distance_to_hf = fct_relevel(distance_to_hf, 
+    distance_to_hf_census = fct_relevel(distance_to_hf_census, 
                                  "Proximate", "Moderate",
                                  "Distant", "Extra Distant")
   ) %>% 
@@ -4043,7 +4147,7 @@ sero_timeofmalaria_district_distance_hf <- seropositivy_summarise(
   geom_point() +
   geom_line() +
   facet_grid(
-    vars(distance_to_hf),
+    vars(distance_to_hf_census),
     vars(ffi_is_district)    
   ) +
   scale_y_continuous(
@@ -4053,7 +4157,7 @@ sero_timeofmalaria_district_distance_hf <- seropositivy_summarise(
   labs(
     x = "Age",
     y = "Seropositivity",
-    title = str_wrap("Seropositivity according to Time of Exposure to malaria by District and distance category of the communities to their respective Health Facilities", 80)
+    title = str_wrap("Seropositivity according to Time of Exposure to malaria by District and distance category of the communities to their respective Health Facilities on a Population Basis.", 80)
   ) +
   guides(
     color = guide_legend("Malaria")
@@ -4076,13 +4180,13 @@ sero_timeofmalaria_district_distance_hf <- seropositivy_summarise(
     )
   )
 
-sero_timeofmalaria_district_distance_hf
+sero_timeofmalaria_district_distance_hf_census
 ```
 
 ```{r eval=FALSE}
 ggsave(
-  "./02_output/plots/plot36_sero_timeofmalaria_district_distance_hf.png",
-  sero_timeofmalaria_district_distance_hf,
+  "./02_output/plots/plot36_sero_timeofmalaria_district_distance_hf_census.png",
+  sero_timeofmalaria_district_distance_hf_census,
   dpi = 300,
   bg = "white",
   width = 12,
@@ -4093,15 +4197,15 @@ ggsave(
 ### Towards Regional Hospital
 
 ```{r}
-sero_timeofmalaria_district_distance_rh <- seropositivy_summarise(
+sero_timeofmalaria_district_distance_rh_census <- seropositivy_summarise(
     ffi_total,
     "timeofmalaria",
     age_cat,
-    distance_rh_bydistr
+    distance_to_rh_census
   ) %>%
   ungroup() %>% 
   mutate(
-    distance_rh_bydistr = fct_relevel(distance_rh_bydistr, 
+    distance_to_rh_census = fct_relevel(distance_to_rh_census, 
                                       "Proximate", "Moderate",
                                       "Distant", "Extra Distant")
   ) %>% 
@@ -4116,7 +4220,7 @@ sero_timeofmalaria_district_distance_rh <- seropositivy_summarise(
   geom_point() +
   geom_line() +
   facet_grid(
-    vars(distance_rh_bydistr),
+    vars(distance_to_rh_census),
     vars(ffi_is_district)    
   ) +
   scale_y_continuous(
@@ -4126,7 +4230,7 @@ sero_timeofmalaria_district_distance_rh <- seropositivy_summarise(
   labs(
     x = "Age",
     y = "Seropositivity",
-    title = str_wrap("Seropositivity according to Time of Exposure to malaria by District and distance category of the communities to Iquitos Regional Hospital", 80)
+    title = str_wrap("Seropositivity according to Time of Exposure to malaria by District and distance category of the communities to Iquitos Regional Hospital on a Population Basis", 80)
   ) +
   guides(
     color = guide_legend("Malaria")
@@ -4149,13 +4253,161 @@ sero_timeofmalaria_district_distance_rh <- seropositivy_summarise(
     )
   )
 
-sero_timeofmalaria_district_distance_rh
+sero_timeofmalaria_district_distance_rh_census
 ```
 
 ```{r eval=FALSE}
 ggsave(
-  "./02_output/plots/plot37_sero_timeofmalaria_district_distance_rh.png",
-  sero_timeofmalaria_district_distance_rh,
+  "./02_output/plots/plot37_sero_timeofmalaria_district_distance_rh_census.png",
+  sero_timeofmalaria_district_distance_rh_census,
+  dpi = 300,
+  bg = "white",
+  width = 12,
+  height = 8.5
+)
+```
+
+### Method Sampling System for distance categories
+
+#### Towards HF
+
+```{r}
+sero_timeofmalaria_district_distance_hf_sampling <- seropositivy_summarise(
+    ffi_total,
+    "timeofmalaria",
+    age_cat,
+    distance_to_hf_sampl
+  ) %>%
+  ungroup() %>% 
+  mutate(
+    distance_to_hf_sampl = fct_relevel(distance_to_hf_sampl, 
+                                 "Proximate", "Moderate",
+                                 "Distant", "Extra Distant")
+  ) %>% 
+  ggplot(
+    aes(
+      x = age_cat,
+      y = result_exposure,
+      color = exposure,
+      group = exposure
+    )
+  ) +
+  geom_point() +
+  geom_line() +
+  facet_grid(
+    vars(distance_to_hf_sampl),
+    vars(ffi_is_district)    
+  ) +
+  scale_y_continuous(
+    labels = scales::percent_format(),
+    #limits = c(0, 0.50)
+  ) +
+  labs(
+    x = "Age",
+    y = "Seropositivity",
+    title = str_wrap("Seropositivity according to Time of Exposure to malaria by District and distance category of the communities to their respective Health Facilities on a Sampling Basis.", 80)
+  ) +
+  guides(
+    color = guide_legend("Malaria")
+  ) +
+  innovar::scale_color_innova("npr") +
+  theme_bw() +
+  theme(
+    plot.title = element_text(
+      size = 14,
+      hjust = 0.5,
+      face = "bold"
+    ),
+    strip.text = element_text(
+      size = 12,
+      face = "bold"
+    ),
+    legend.title = element_text(
+      size = 12,
+      face = "bold"
+    )
+  )
+
+sero_timeofmalaria_district_distance_hf_sampling
+```
+
+```{r eval=FALSE}
+ggsave(
+  "./02_output/plots/plot38_sero_timeofmalaria_district_distance_hf_sampling.png",
+  sero_timeofmalaria_district_distance_hf_sampling,
+  dpi = 300,
+  bg = "white",
+  width = 12,
+  height = 8.5
+)
+```
+
+### Towards Regional Hospital
+
+```{r}
+sero_timeofmalaria_district_distance_rh_sampling <- seropositivy_summarise(
+    ffi_total,
+    "timeofmalaria",
+    age_cat,
+    distance_to_rh_sampl
+  ) %>%
+  ungroup() %>% 
+  mutate(
+    distance_to_rh_sampl = fct_relevel(distance_to_rh_sampl, 
+                                      "Proximate", "Moderate",
+                                      "Distant", "Extra Distant")
+  ) %>% 
+  ggplot(
+    aes(
+      x = age_cat,
+      y = result_exposure,
+      color = exposure,
+      group = exposure
+    )
+  ) +
+  geom_point() +
+  geom_line() +
+  facet_grid(
+    vars(distance_to_rh_sampl),
+    vars(ffi_is_district)    
+  ) +
+  scale_y_continuous(
+    labels = scales::percent_format(),
+    #limits = c(0, 0.50)
+  ) +
+  labs(
+    x = "Age",
+    y = "Seropositivity",
+    title = str_wrap("Seropositivity according to Time of Exposure to malaria by District and distance category of the communities to Iquitos Regional Hospital on a Sampling Basis", 80)
+  ) +
+  guides(
+    color = guide_legend("Malaria")
+  ) +
+  innovar::scale_color_innova("npr") +
+  theme_bw() +
+  theme(
+    plot.title = element_text(
+      size = 14,
+      hjust = 0.5,
+      face = "bold"
+    ),
+    strip.text = element_text(
+      size = 12,
+      face = "bold"
+    ),
+    legend.title = element_text(
+      size = 12,
+      face = "bold"
+    )
+  )
+
+sero_timeofmalaria_district_distance_rh_sampling
+```
+
+```{r eval=FALSE}
+ggsave(
+  "./02_output/plots/plot39_sero_timeofmalaria_district_distance_rh_sampling.png",
+  sero_timeofmalaria_district_distance_rh_sampling,
   dpi = 300,
   bg = "white",
   width = 12,
