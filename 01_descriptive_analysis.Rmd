@@ -4017,73 +4017,21 @@ ggsave(
 
 ## Relation with distance category towards HF and Regional Hospital
 
-
-
-
-
-
-
-
-### By 4 Malaria
+### Towards HF
 
 ```{r}
-sero_4malaria_district_tripmonth <- seropositivy_summarise(
-  ffi_total,
-  "4malaria",
-  age_cat,
-  ffi_is_trip_month
-) %>%
-  ggplot(
-    aes(
-      x = age_cat,
-      y = result_malaria,
-      color = malaria,
-      group = malaria
-    )
-  ) +
-  geom_point() +
-  geom_line() +
-  facet_grid(
-    vars(ffi_is_trip_month),
-    vars(ffi_is_district)    
-  ) +
-  scale_y_continuous(
-    labels = scales::percent_format(),
-    #limits = c(0, 0.50)
-  ) +
-  labs(
-    x = "Age",
-    y = "Seropositivity"
-  ) +
-  guides(
-    color = guide_legend("Malaria")
-  ) +
-  innovar::scale_color_innova("npr") +
-  theme_bw()
-
-sero_4malaria_district_tripmonth
-```
-
-```{r eval=FALSE}
-ggsave(
-  "./02_output/plots/plot31_sero_4malaria_district_tripmonth.png",
-  sero_4malaria_district_tripmonth,
-  dpi = 300,
-  bg = "white",
-  width = 12,
-  height = 8.5
-)
-```
-
-### By Type of Malaria
-
-```{r}
-sero_typeofmalaria_district_tripmonth <- seropositivy_summarise(
-  ffi_total,
-  "typeofmalaria",
-  age_cat,
-  ffi_is_trip_month
-) %>%
+sero_timeofmalaria_district_distance_hf <- seropositivy_summarise(
+    ffi_total,
+    "timeofmalaria",
+    age_cat,
+    distance_to_hf
+  ) %>%
+  ungroup() %>% 
+  mutate(
+    distance_to_hf = fct_relevel(distance_to_hf, 
+                                 "Proximate", "Moderate",
+                                 "Distance", "Extra Distance")
+  ) %>% 
   ggplot(
     aes(
       x = age_cat,
@@ -4095,30 +4043,119 @@ sero_typeofmalaria_district_tripmonth <- seropositivy_summarise(
   geom_point() +
   geom_line() +
   facet_grid(
-    vars(ffi_is_trip_month),
+    vars(distance_to_hf),
     vars(ffi_is_district)    
   ) +
   scale_y_continuous(
     labels = scales::percent_format(),
-    #limits = c(0, 0.60)
+    #limits = c(0, 0.50)
   ) +
   labs(
     x = "Age",
-    y = "Seropositivity"
+    y = "Seropositivity",
+    title = str_wrap("Seropositivity according to Time of Exposure to malaria by District and distance category of the communities to their respective Health Facilities", 80)
   ) +
   guides(
     color = guide_legend("Malaria")
   ) +
   innovar::scale_color_innova("npr") +
-  theme_bw()
+  theme_bw() +
+  theme(
+    plot.title = element_text(
+      size = 14,
+      hjust = 0.5,
+      face = "bold"
+    ),
+    strip.text = element_text(
+      size = 12,
+      face = "bold"
+    ),
+    legend.title = element_text(
+      size = 12,
+      face = "bold"
+    )
+  )
 
-sero_typeofmalaria_district_tripmonth
+sero_timeofmalaria_district_distance_hf
 ```
 
 ```{r eval=FALSE}
 ggsave(
-  "./02_output/plots/plot32_sero_typeofmalaria_district_tripmonth.png",
-  sero_typeofmalaria_district_tripmonth,
+  "./02_output/plots/plot36_sero_timeofmalaria_district_distance_hf.png",
+  sero_timeofmalaria_district_distance_hf,
+  dpi = 300,
+  bg = "white",
+  width = 12,
+  height = 8.5
+)
+```
+
+### Towards Regional Hospital
+
+```{r}
+sero_timeofmalaria_district_distance_rh <- seropositivy_summarise(
+    ffi_total,
+    "timeofmalaria",
+    age_cat,
+    distance_rh_bydistr
+  ) %>%
+  ungroup() %>% 
+  mutate(
+    distance_rh_bydistr = fct_relevel(distance_rh_bydistr, 
+                                      "Proximate", "Moderate",
+                                      "Distance", "Extra Distance")
+  ) %>% 
+  ggplot(
+    aes(
+      x = age_cat,
+      y = result_exposure,
+      color = exposure,
+      group = exposure
+    )
+  ) +
+  geom_point() +
+  geom_line() +
+  facet_grid(
+    vars(distance_rh_bydistr),
+    vars(ffi_is_district)    
+  ) +
+  scale_y_continuous(
+    labels = scales::percent_format(),
+    #limits = c(0, 0.50)
+  ) +
+  labs(
+    x = "Age",
+    y = "Seropositivity",
+    title = str_wrap("Seropositivity according to Time of Exposure to malaria by District and distance category of the communities to Iquitos Regional Hospital", 80)
+  ) +
+  guides(
+    color = guide_legend("Malaria")
+  ) +
+  innovar::scale_color_innova("npr") +
+  theme_bw() +
+  theme(
+    plot.title = element_text(
+      size = 14,
+      hjust = 0.5,
+      face = "bold"
+    ),
+    strip.text = element_text(
+      size = 12,
+      face = "bold"
+    ),
+    legend.title = element_text(
+      size = 12,
+      face = "bold"
+    )
+  )
+
+sero_timeofmalaria_district_distance_rh
+```
+
+```{r eval=FALSE}
+ggsave(
+  "./02_output/plots/plot37_sero_timeofmalaria_district_distance_rh.png",
+  sero_timeofmalaria_district_distance_rh,
   dpi = 300,
   bg = "white",
   width = 12,
