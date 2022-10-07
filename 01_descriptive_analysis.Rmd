@@ -495,6 +495,164 @@ communities_distances %>%
 ```
 
 
+# Distance Group about communities
+
+
+```{r}
+comunidades_info_total <- readRDS("01_data/raw/Información poblacional comunidades.RData")
+
+comunidades_info_total <- comunidades_info_total %>% 
+  mutate(
+    geometry = case_when(
+      MNOMCP == "8 DE DICIEMBRE" ~ st_cast(
+        st_sfc(st_point(c(-73.248636296, 
+                          -3.777654358))), 
+        "GEOMETRY"
+        ),
+      MNOMCP == "CABO LOPEZ" ~ st_cast(
+        st_sfc(st_point(c(-73.253457539, 
+                          -3.781405681))), 
+        "GEOMETRY"
+        ),
+      MNOMCP == "TIMICURO GRANDE" ~ st_cast(
+        st_sfc(st_point(c(-73.023866667, 
+                          -3.558536667))), 
+        "GEOMETRY"
+        ),
+      TRUE ~ st_cast(geometry, "GEOMETRY"))
+  ) %>% 
+  filter(!st_is_empty(geometry)) %>% 
+  distinct(MNOMCP, .keep_all = TRUE)
+```
+
+## Distance communities and their HF's
+
+```{r}
+names_hf <- ffi_household %>% 
+  count(ffi_h_health_facility_name) %>% 
+  pull(ffi_h_health_facility_name)
+
+hf_shp <- readRDS("01_data/raw/HF_shp.rds")
+
+hf_shp <- hf_shp %>% 
+  filter(`Health Facility Name` %in% names_hf) %>% 
+  select(District, 
+         ffi_h_health_facility_name = `Health Facility Name`)
+
+communities_distances_hf <- comunidades_info_total %>% 
+  filter(`Health Facility Name` %in% hf_shp$ffi_h_health_facility_name) %>% 
+  st_as_sf(crs = 4326) %>% 
+  st_transform(crs = 32718) %>% 
+  st_distance(
+    hf_shp %>% 
+      st_transform(crs = 32718)
+  ) %>% 
+  as_tibble() 
+
+names_comunities_9_hf <- comunidades_info_total %>% 
+  filter(`Health Facility Name` %in% hf_shp$ffi_h_health_facility_name) %>% 
+  pull(MNOMCP)
+
+names_districts_9_hf <- comunidades_info_total %>% 
+  filter(`Health Facility Name` %in% hf_shp$ffi_h_health_facility_name) %>% 
+  pull(District)
+
+names(communities_distances_hf) <- hf_shp$ffi_h_health_facility_name
+
+communities_distances_hf <- communities_distances_hf %>% 
+  mutate(
+    ffi_is_community = names_comunities_9_hf,
+    ffi_is_district = names_districts_9_hf,
+    .before = 1
+  ) %>% 
+  pivot_longer(
+    cols = -c(ffi_is_community, ffi_is_district),
+    names_to = "ffi_is_health_facility_name",
+    values_to = "distance_to_hf"
+  ) %>% 
+  mutate(distance_to_hf = as.numeric(distance_to_hf))
+
+communities_distances_hf_cat <- comunidades_info_total %>% 
+  filter(`Health Facility Name` %in% hf_shp$ffi_h_health_facility_name) %>% 
+  select(
+    ffi_is_district = District,
+    ffi_is_health_facility_name = `Health Facility Name`, 
+    ffi_is_community = MNOMCP
+  ) %>% 
+  left_join(
+    communities_distances_hf
+  )
+  
+  
+communities_distances_hf_cat <- communities_distances_hf_cat %>% 
+  filter(ffi_is_health_facility_name != "SOLEDAD DE VILLA BELEN") %>% 
+  group_by(ffi_is_health_facility_name) %>% 
+  mutate(
+    distance_to_hf = as.numeric(cut_number(distance_to_hf, 4)),
+    distance_to_hf = factor(distance_to_hf, 
+                            labels = c("Proximate", "Moderate",
+                                       "Distance", "Extra Distance"))
+  ) %>% 
+  bind_rows(
+    communities_distances_hf_total %>% 
+      filter(ffi_is_health_facility_name == "SOLEDAD DE VILLA BELEN") %>% 
+      mutate(
+        distance_to_hf = "Moderate"
+      )
+  )
+```
+
+Update info:
+
+```{r}
+ffi_total <- ffi_total %>% 
+  left_join(
+    communities_distances_hf_total
+  )
+```
+
+
+## Distance communities and Regional Hospital
+
+```{r}
+communities_distances_rh <- comunidades_info_total %>% 
+  st_as_sf(crs = 4326) %>% 
+  st_transform(crs = 32718) %>% 
+  st_distance(
+    iquitos_centro
+  ) %>% 
+  enframe() %>% 
+  mutate(
+    ffi_is_community = comunidades_info_total$MNOMCP,
+    distance_rh_bydistr = as.numeric(value),
+    ffi_is_district = comunidades_info_total$District
+  ) %>%
+  select(-c(name, value))
+```
+
+```{r}
+communities_distances_rh_cat <- communities_distances_rh %>% 
+  drop_na(distance_rh_bydistr) %>% 
+  arrange(ffi_is_district, distance_rh_bydistr) %>% 
+  group_by(ffi_is_district) %>% 
+  mutate(
+    distance_rh_bydistr = as.numeric(cut_number(distance_rh_bydistr, 4)),
+    distance_rh_bydistr = factor(distance_rh_bydistr, 
+                            labels = c("Proximate", "Moderate",
+                                       "Distance", "Extra Distance"))
+  )
+```
+
+Update info:
+
+```{r}
+ffi_total <- ffi_total %>% 
+  left_join(
+    communities_distances_rh_cat
+  )
+```
+
+
 # Plots
 
 ## Malaria Annual Parasite Index
@@ -2121,7 +2279,6 @@ ggsave(
 
 #### By Time of Malaria
 
-
 ```{r}
 ffi_fever_month_timeofmalaria <- ffi_total %>%
   drop_na(pf_recent:pv_historic, age_cat, ffi_is_fever_month) %>%
@@ -2177,6 +2334,8 @@ sero_timeofmalaria_fever_month <- ffi_fever_month_typeofmalaria %>%
   ) +
   innovar::scale_color_innova("npr") +
   theme_bw()
+
+sero_timeofmalaria_fever_month
 ```
 
 ```{r eval=FALSE}
@@ -2719,7 +2878,7 @@ ggsave(
 ### By 4 Malaria
 
 ```{r}
-sero_4malaria_district_ussualybathe<- seropositivy_summarise(
+sero_4malaria_district_ussualybathe <- seropositivy_summarise(
   ffi_total,
   "4malaria",
   age_cat,
@@ -3243,6 +3402,8 @@ plot_4_2 <- ffi_total %>%
     ),
     plot.margin = margin(5, 15, 5, 15)
   )
+
+plot_4_2
 ```
 
 # Descriptive 01_data
@@ -3308,6 +3469,8 @@ plot_4_2 <- ffi_total %>%
     ),
     plot.margin = margin(5, 15, 5, 15)
   )
+
+plot_4_2
 ```
 
 ## Sankey_seropositive
@@ -3436,6 +3599,7 @@ sankey_seropositive <- ffi_format_sankey %>%
     plot.margin = margin(5, 5, 5, 5)
   )
 
+sankey_seropositive
 ```
 
 ```{r eval=FALSE}
