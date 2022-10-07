@@ -1,0 +1,218 @@
+---
+title: "Spatial Analysis"
+author: "Brian Norman Peña-Calero"
+date: "`r Sys.Date()`"
+output: 
+  rmdformats::downcute:
+    self_contained: true
+    highlight: kate
+    toc_depth: 3
+    default_style: dark
+    code_folding: hide
+    code_download: true
+    highlight_downlit: true
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(sf)
+library(car)
+library(ape) # Analyses of Phylogenetics and Evolution
+library(pgirmess)
+library(leaflet)
+# library(rgdal)
+# library(raster)
+# library(ggplot2)
+# library(spatstat)
+# library(plotrix)
+# library(fields)
+# library(leaflet)
+# library(maptools)
+# library(RColorBrewer)
+# library(lattice)
+# library(geoR)
+# library(plotrix) 
+# library(car)  # contains a function for logistic transformation (log odds) to make more normal
+
+```
+
+```{r}
+# library(sp)
+# 
+# # Moran's I and spatial dependencies
+# library(spdep) # Spatial Dependence: Weighting Schemes, Statistics and Models
+# 
+# library(pgirmess) # Data Analysis in Ecology
+# 
+# # Libraries for point processes
+# library(spatstat)
+# library(splancs) # K-function
+# library(smacpod) # Spatial scanning statistic
+
+```
+
+# Import data
+
+```{r}
+ffi_total <- readRDS("01_data/processed/ffi_total.rds")
+ffi_household <- read_csv("./01_data/raw/household_gps_share_072022.csv")
+```
+
+
+```{r}
+ffi_prevalence_by_household <- ffi_total %>% 
+  mutate(
+    recent_exposure = case_when(
+      recent_exposure == "Positive" ~ 1,
+      TRUE ~ 0
+    )
+  ) %>% 
+  group_by(ffi_is_community, ffi_is_cod_household) %>% 
+  summarise(
+    examined = n(),
+    positives = sum(recent_exposure)
+  ) %>% 
+  ungroup() %>% 
+  mutate(
+    prevalence = positives/examined
+  ) %>% 
+  left_join(
+    ffi_household %>% 
+      select(ffi_is_community = ffi_h_community,
+             ffi_is_cod_household = ffi_h_code_household,
+             ffi_gps_long, ffi_gps_lat)
+  ) 
+  # st_as_sf(
+  #   coords = c("ffi_gps_long", "ffi_gps_lat"),
+  #   crs = 4326
+  # )
+
+
+# ffi_prevalence_by_communities <- ffi_total %>% 
+#   mutate(
+#     recent_exposure = case_when(
+#       recent_exposure == "Positive" ~ 1,
+#       TRUE ~ 0
+#     )
+#   ) %>% 
+#   group_by(ffi_is_community) %>% 
+#   summarise(
+#     examined = n(),
+#     positives = sum(recent_exposure)
+#   ) %>% 
+#   ungroup() %>% 
+#   mutate(
+#     prevalence = positives/examined
+#   )
+```
+
+
+```{r}
+ffi_prevalence_by_household$log_odds <- logit(ffi_prevalence_by_household$prevalence)
+hist(ffi_prevalence_by_household$log_odds, xlab = "Log odds", main = "")
+```
+
+```{r}
+pal = colorNumeric("Oranges", ffi_prevalence_by_household$prevalence)
+leaflet(ffi_prevalence_by_household) %>% 
+  addTiles() %>% 
+  addCircleMarkers(
+    ~ffi_gps_long, ~ffi_gps_lat, fillOpacity=1,
+    fillColor= ~pal(prevalence),
+    radius=~prevalence*10,
+    stroke=TRUE, weight=1
+  ) %>% 
+  addLegend(pal = pal, values = ~prevalence)
+```
+
+## Global spatial autocorrelation
+
+```{r}
+hist(ffi_prevalence_by_household$prevalence, xlab = "Prevalence", main = "")
+```
+
+```{r}
+ffi.dists <- as.matrix(dist(cbind(ffi_prevalence_by_household$ffi_gps_long, 
+                                  ffi_prevalence_by_household$ffi_gps_lat)))
+dim(ffi.dists) # 980 x 980 matrix of distance between all sets of points
+```
+
+### First aproach
+
+```{r error=TRUE}
+# Take the inverse of the matrix values so that closer values have a larger weight and vs vs
+ffi.dists.inv <- 1/ffi.dists
+diag(ffi.dists.inv) <- 0   # replace the diagonal values with zero
+
+# Computes Moran's I autocorrelation coefficient of x giving a matrix of weights (here based on distance) 
+Moran.I(ffi_prevalence_by_household$log_odds, ffi.dists.inv)                 # from the "ape" package
+```
+
+### Second aproach
+```{r}
+maxDist<-max(dist(cbind(ffi_prevalence_by_household$ffi_gps_long, 
+                        ffi_prevalence_by_household$ffi_gps_lat)))
+maxDist
+```
+
+
+
+```{r dpi = 300, fig.height=7, fig.width=9}
+xy=cbind(ffi_prevalence_by_household$ffi_gps_long,
+         ffi_prevalence_by_household$ffi_gps_lat)
+pgi.cor <- correlog(coords=xy, 
+                    z=ffi_prevalence_by_household$log_odds,
+                    method="Moran", nbclass=10)   # "pgirmess" package
+# coords = xy cordinates, z= vector of values at each location and nbclass = the number of bins
+plot(pgi.cor) # statistically significant values (p<0.05) are plotted in red
+```
+
+```{r}
+pgi.cor
+```
+
+Based on the correlogram, over what spatial lags are there evidence for spatial autocorrelation? Is this clustering positive or negative?
+
+Compare the correlogram to the results from a semivariogram approach:
+
+```{r}
+ffi_malaria_data_geo <- geoR::as.geodata(
+  ffi_prevalence_by_household[,c("ffi_gps_long","ffi_gps_lat","log_odds")]
+)
+
+# Generate and plot a binned variogram (10 bins) NB: have made for full max distance (even though likely inaccurate) for comparison
+Vario<- geoR::variog(ffi_malaria_data_geo,
+                     max.dist = maxDist,
+                     uvec = seq(first(pgi.cor[, 1]),
+                              last(pgi.cor[, 1]),
+                              l = 10))
+```
+
+
+```{r dpi = 400, fig.height=10, fig.width=7}
+par(mfrow=c(2,1))
+plot(Vario)
+plot(pgi.cor)
+```
+
+
+## Another analysis
+
+
+```{r}
+# ffi_prevalence_by_household %>% 
+#   st_as_sf(
+#     coords = c("ffi_gps_long", "ffi_gps_lat"),
+#     crs = 4326
+#   ) %>% 
+#   tm_shape() +
+#   tm_fill("positives", style = "jenks", n = 6) +
+#   tm_borders() +
+#   tm_layout(legend.outside = TRUE, legend.outside.position = "left")
+```
+
+
+
