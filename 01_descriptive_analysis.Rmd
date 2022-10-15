@@ -742,7 +742,8 @@ communities_distances_rh_cat <- communities_distances_rh %>%
     distance_to_rh_census = factor(distance_to_rh_census, 
                             labels = c("Proximate", "Moderate",
                                        "Distant", "Extra Distant"))
-  )
+  ) %>% 
+  distinct(ffi_is_community, ffi_is_district)
 ```
 
 Update info:
@@ -756,6 +757,135 @@ ffi_total <- ffi_total %>%
 
 
 # Plots
+
+## Map
+
+```{r}
+library(ggmap)
+```
+
+```{r}
+count_communities <- ffi_total %>% 
+  count(ffi_is_community, ffi_is_cod_com, name = "sampling") %>% 
+  mutate(
+    sampling_size = case_when(
+      sampling >= 180 ~ "180+",
+      sampling >= 120 ~ "120-179",
+      sampling >= 70 ~ "70-119",
+      TRUE ~ "< 70"
+    ),
+    sampling_size = fct_relevel(sampling_size,
+                                "120-179",
+                                "180+", after = Inf)
+  ) 
+
+communities_sf2 <- communities_sf %>% 
+  left_join(count_communities,
+            by = c("ffi_h_code_community" = "ffi_is_cod_com",
+                   "ffi_h_community" = "ffi_is_community"))
+
+
+od_hf_communities <- communities_sf %>% 
+  as_tibble() %>% 
+  select(O = ffi_h_health_facility_name,
+         D = ffi_h_community)
+
+places_togueter <- hf_shp %>% 
+  rename(Place = ffi_h_health_facility_name) %>% 
+  select(-District) %>% 
+  mutate(Type = "Health Facility") %>% 
+  bind_rows(
+    communities_sf %>% 
+      select(Place = ffi_h_community) %>% 
+      mutate(Type = "Community")
+  )
+
+places_sf_linestring <- od::od_to_sf(od_hf_communities,
+                                     places_togueter)
+```
+
+
+```{r}
+ph_basemap <- readRDS("01_data/raw/gmap_shp.rds")
+data(Peru, package = "innovar")
+distr_shp <- Peru %>% 
+  filter(prov == "MAYNAS",
+         distr %in% c("INDIANA", "BELEN")) 
+
+map_linedash <- ggmap(ph_basemap) +
+  coord_sf(crs = st_crs(4326)) +
+  geom_sf(data = distr_shp %>% 
+            mutate(distr = str_to_title(distr)),
+          aes(fill = distr),
+          size = 1,
+          alpha = 0.5,
+          color = "black",
+          inherit.aes = FALSE) +
+  scale_fill_manual(
+    values = c("#64b2af", "#feee67")
+  ) + 
+  geom_sf(data = communities_sf2 %>% 
+            mutate(Type = "Community (38)"),
+          aes(size = sampling_size,
+              shape = Type,
+              color = Type),
+          alpha = 0.8,
+          inherit.aes = FALSE) +
+  geom_sf(data = hf_shp %>% 
+            mutate(Type = "Health Facility (9)"),
+          aes(shape = Type,
+              color = Type),
+          size = 5,
+          inherit.aes = FALSE
+          ) +
+  # ggsflabel::geom_sf_text_repel(data = hf_shp,
+  #                               aes(label = ffi_h_health_facility_name),
+  #                               inherit.aes = FALSE) +
+  geom_sf(data = places_sf_linestring,
+          linetype = "dashed",
+          inherit.aes = FALSE) +
+  scale_shape_manual(
+    values = c(16, 18)
+  ) +
+  scale_color_manual(
+    values = c("black", "red")
+  ) + 
+  # ggsflabel::geom_sf_text_repel(data = hf_shp,
+  #                               aes(label = label2),
+  #                               force = 10,
+  #                               force_pull = -30,
+  #                               direction = "y",
+  #                               nudge_x = 0.35,
+  #                               seed = 2021,
+  #                               inherit.aes = FALSE) +
+  coord_sf(xlim = c(-73.42, -72.56),
+           ylim = c(-4.42, -3.35), 
+           expand = FALSE) +
+  labs(x = NULL,
+       y = NULL,
+       title = "Communities and Health Facilities for the Study") +
+  guides(
+    size = guide_legend("Sampling size"),
+    fill = guide_legend("District")
+  ) +
+  theme_bw(base_size = 12) + 
+  theme(
+    plot.title = element_text(size = 14,
+                              hjust = 0.5,
+                              face = "bold")
+  )
+map_linedash
+```
+
+```{r}
+ggsave("02_output/plots/map_communities_hf_dashed.png",
+       map_linedash,
+       dpi = 400,
+       device = grDevices::png,
+       height = 5,
+       width = 7)
+```
+
 
 ## Malaria Annual Parasite Index
 
