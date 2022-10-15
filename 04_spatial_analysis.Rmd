@@ -66,7 +66,8 @@ ffi_household <- read_csv("./01_data/raw/household_gps_share_072022.csv")
 ffi_prevalence_by_household <- ffi_total %>% 
   mutate(
     across(
-      c(pv_recent, pf_recent, recent_exposure),
+      c(pf_recent:pv_historic, 
+        recent_exposure, historical_exposure),
       ~ case_when(
         . == "Positive" ~ 1,
         TRUE ~ 0
@@ -78,15 +79,19 @@ ffi_prevalence_by_household <- ffi_total %>%
   summarise(
     examined = n(),
     across(
-      c(pv_recent, pf_recent, recent_exposure),
+      c(pf_recent:pv_historic, 
+        recent_exposure, historical_exposure),
       sum
     )
   ) %>% 
   ungroup() %>% 
   mutate(
-    prevalence_pv = pv_recent/examined,
-    prevalence_pf = pv_recent/examined,
-    prevalence_exposure = recent_exposure/examined
+    across(
+      c(pf_recent:pv_historic, 
+        recent_exposure, historical_exposure),
+      ~ ./examined,
+      .names = "prevalence_{.col}"
+    )
   ) %>% 
   left_join(
     ffi_household %>% 
@@ -123,27 +128,27 @@ ffi_prevalence_by_household <- ffi_total %>%
 
 
 ```{r}
-ffi_prevalence_by_household$log_odds <- logit(ffi_prevalence_by_household$prevalence_exposure)
+ffi_prevalence_by_household$log_odds <- logit(ffi_prevalence_by_household$prevalence_recent_exposure)
 hist(ffi_prevalence_by_household$log_odds, xlab = "Log odds", main = "")
 ```
 
 ```{r}
-pal = colorNumeric("Oranges", ffi_prevalence_by_household$prevalence_exposure)
+pal = colorNumeric("Oranges", ffi_prevalence_by_household$prevalence_recent_exposure)
 leaflet(ffi_prevalence_by_household) %>% 
   addTiles() %>% 
   addCircleMarkers(
     ~ffi_gps_long, ~ffi_gps_lat, fillOpacity=1,
-    fillColor= ~pal(prevalence_exposure),
-    radius=~prevalence_exposure*10,
+    fillColor= ~pal(prevalence_recent_exposure),
+    radius=~prevalence_recent_exposure*10,
     stroke=TRUE, weight=1
   ) %>% 
-  addLegend(pal = pal, values = ~prevalence_exposure)
+  addLegend(pal = pal, values = ~prevalence_recent_exposure)
 ```
 
 ## Global spatial autocorrelation
 
 ```{r}
-hist(ffi_prevalence_by_household$prevalence_exposure, xlab = "prevalence_exposure", main = "")
+hist(ffi_prevalence_by_household$prevalence_recent_exposure, xlab = "prevalence_recent_exposure", main = "")
 ```
 
 ```{r}
@@ -271,7 +276,7 @@ labels <- c("Cold spot: 99% confidence",
 w.getis <- ffi_prevalence_by_household_sf %>% 
   st_set_geometry(NULL) %>% 
   pivot_longer(
-    cols = c(prevalence_pv:prevalence_exposure),
+    cols = c(prevalence_pf_recent:prevalence_historical_exposure),
     names_to = "type_plasmodium",
     values_to = "prevalence"
   ) %>% 
@@ -323,9 +328,14 @@ ffi_shp <- Peru %>%
          distr %in% c("INDIANA",
                       "BELEN"))
 
-plot_getis <- ggplot() +
+plot_getis_recent <- ggplot() +
   geom_sf(data = ffi_shp, fill = "#dcdcdc") + 
-  geom_sf(data = w.getis_sf,
+  geom_sf(data = w.getis_sf %>% 
+            filter(type_plasmodium %in% c("prevalence_pf_recent", 
+                                          "prevalence_pv_recent",
+                                          "prevalence_recent_exposure")) %>% 
+            mutate(type_plasmodium = fct_relevel(type_plasmodium,
+                                                 "prevalence_recent_exposure")),
           aes(col = LISA_clust), 
           size = 1.5,
           alpha = 1) +
@@ -334,9 +344,9 @@ plot_getis <- ggplot() +
   # colorspace::scale_color_discrete_diverging(palette = "Blue-Red",
   #                                limits = labels) +
   facet_wrap(vars(type_plasmodium),
-             labeller = labeller(type_plasmodium = c(prevalence_exposure = "Prevalence Recent Exposure",
-                                   prevalence_pf = "Prevalence Recent P. Falciparum",
-                                   prevalence_pv = "Prevalence Recent P. Vivax"))) +
+             labeller = labeller(type_plasmodium = c(prevalence_recent_exposure = "Prevalence Recent Exposure",
+                                   prevalence_pf_recent = "Prevalence Recent P. Falciparum",
+                                   prevalence_pv_recent = "Prevalence Recent P. Vivax"))) +
   labs(color = "Local Indicator of Spatial Association",
        title = "Spatial Analysis for Recent Exposure") +
   #guides(colour = guide_legend(override.aes = list(size=10))) +
@@ -353,16 +363,59 @@ plot_getis <- ggplot() +
       face = "bold"
     )
   )
-plot_getis
+plot_getis_recent
 ```
 
 ```{r eval = FALSE}
-ggsave("02_output/plots/map_getis_lisa.png",
-       plot_getis,
+ggsave("02_output/plots/map_getis_lisa_recent.png",
+       plot_getis_recent,
        dpi = 400,
        device = grDevices::png)
 ```
 
+```{r}
+plot_getis_historical <- ggplot() +
+  geom_sf(data = ffi_shp, fill = "#dcdcdc") + 
+  geom_sf(data = w.getis_sf %>% 
+            filter(type_plasmodium %in% c("prevalence_pf_historic", 
+                                          "prevalence_pv_historic",
+                                          "prevalence_historical_exposure")),
+          aes(col = LISA_clust), 
+          size = 1.5,
+          alpha = 1) +
+  geom_sf(data = ffi_shp, fill = NA) + 
+  innovar::scale_color_innova("npr") +
+  # colorspace::scale_color_discrete_diverging(palette = "Blue-Red",
+  #                                limits = labels) +
+  facet_wrap(vars(type_plasmodium),
+             labeller = labeller(type_plasmodium = c(prevalence_historical_exposure = "Prevalence Historic Exposure",
+                                   prevalence_pf_historic = "Prevalence Historic P. Falciparum",
+                                   prevalence_pv_historic = "Prevalence Historic P. Vivax"))) +
+  labs(color = "Local Indicator of Spatial Association",
+       title = "Spatial Analysis for Historic Exposure") +
+  #guides(colour = guide_legend(override.aes = list(size=10))) +
+  theme_classic(base_size = 12) +
+  theme(
+    legend.title = element_text(
+      face = "bold"
+    ),
+    plot.title = element_text(
+      face = "bold",
+      hjust = 0.5
+    ),
+    strip.text = element_text(
+      face = "bold"
+    )
+  )
+plot_getis_historical
+```
+
+```{r eval = FALSE}
+ggsave("02_output/plots/map_getis_lisa_historical.png",
+       plot_getis_historical,
+       dpi = 400,
+       device = grDevices::png)
+```
 
 ```{r}
 w.getis %>% 
