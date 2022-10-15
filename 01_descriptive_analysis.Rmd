@@ -4087,12 +4087,45 @@ ggsave("./02_output/plots/plot34_sankey_seropositive_vivax.png",
 ### By 4 Malaria
 
 ```{r}
+structure_df_district_gender_economic <- SimDesign::createDesign(
+  ffi_is_district = c("Belen", "Indiana"),
+  economic_activities = factor(c("Day labourer", 
+                                 "Wood extractor", "Fisherman", "Livestock farmer", "Farmer", 
+                                 "Trader", "Housewife", "Student", "Motorcycle taxi driver", "None", 
+                                 "Other")),
+  gender = factor(c("Male", "Female")),
+  malaria = c("Historical P. Falciparum", "Historical P. Vivax", 
+              "Recent P. Falciparum", 
+              "Recent P. Vivax")
+) 
+
+add_cases_0_district_gender_economic <- structure_df_district_gender_economic %>% 
+  anti_join(
+    seropositivy_summarise(
+      ffi_total,
+      "4malaria",
+      economic_activities,
+      gender
+    ) %>% 
+      select(-result_malaria)
+  ) %>% 
+  mutate(
+    result_malaria = 0
+  )
+
+
+
+```
+
+
+```{r}
 sero_4malaria_district_gender_economic <- seropositivy_summarise(
   ffi_total,
   "4malaria",
   economic_activities,
   gender
-) %>%
+) %>% 
+  bind_rows(add_cases_0_district_gender_economic) %>%
   ggplot(
     aes(
       x = economic_activities,
