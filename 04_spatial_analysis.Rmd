@@ -65,26 +65,38 @@ ffi_household <- read_csv("./01_data/raw/household_gps_share_072022.csv")
 ```{r}
 ffi_prevalence_by_household <- ffi_total %>% 
   mutate(
-    recent_exposure = case_when(
-      recent_exposure == "Positive" ~ 1,
-      TRUE ~ 0
+    across(
+      c(pv_recent, pf_recent, recent_exposure),
+      ~ case_when(
+        . == "Positive" ~ 1,
+        TRUE ~ 0
+      )
     )
   ) %>% 
-  group_by(ffi_is_community, ffi_is_cod_household) %>% 
+  group_by(ffi_is_community, ffi_is_cod_com,
+           ffi_is_cod_household) %>% 
   summarise(
     examined = n(),
-    positives = sum(recent_exposure)
+    across(
+      c(pv_recent, pf_recent, recent_exposure),
+      sum
+    )
   ) %>% 
   ungroup() %>% 
   mutate(
-    prevalence = positives/examined
+    prevalence_pv = pv_recent/examined,
+    prevalence_pf = pv_recent/examined,
+    prevalence_exposure = recent_exposure/examined
   ) %>% 
   left_join(
     ffi_household %>% 
       select(ffi_is_community = ffi_h_community,
              ffi_is_cod_household = ffi_h_code_household,
              ffi_gps_long, ffi_gps_lat)
-  ) 
+  ) %>% 
+  mutate(
+    cod_id = paste0(ffi_is_cod_com, ffi_is_cod_household)
+  )
   # st_as_sf(
   #   coords = c("ffi_gps_long", "ffi_gps_lat"),
   #   crs = 4326
@@ -111,27 +123,27 @@ ffi_prevalence_by_household <- ffi_total %>%
 
 
 ```{r}
-ffi_prevalence_by_household$log_odds <- logit(ffi_prevalence_by_household$prevalence)
+ffi_prevalence_by_household$log_odds <- logit(ffi_prevalence_by_household$prevalence_exposure)
 hist(ffi_prevalence_by_household$log_odds, xlab = "Log odds", main = "")
 ```
 
 ```{r}
-pal = colorNumeric("Oranges", ffi_prevalence_by_household$prevalence)
+pal = colorNumeric("Oranges", ffi_prevalence_by_household$prevalence_exposure)
 leaflet(ffi_prevalence_by_household) %>% 
   addTiles() %>% 
   addCircleMarkers(
     ~ffi_gps_long, ~ffi_gps_lat, fillOpacity=1,
-    fillColor= ~pal(prevalence),
-    radius=~prevalence*10,
+    fillColor= ~pal(prevalence_exposure),
+    radius=~prevalence_exposure*10,
     stroke=TRUE, weight=1
   ) %>% 
-  addLegend(pal = pal, values = ~prevalence)
+  addLegend(pal = pal, values = ~prevalence_exposure)
 ```
 
 ## Global spatial autocorrelation
 
 ```{r}
-hist(ffi_prevalence_by_household$prevalence, xlab = "Prevalence", main = "")
+hist(ffi_prevalence_by_household$prevalence_exposure, xlab = "prevalence_exposure", main = "")
 ```
 
 ```{r}
@@ -199,8 +211,197 @@ plot(pgi.cor)
 ```
 
 
-## Another analysis
+## Another approach
 
+```{r}
+library(spdep)
+```
+
+
+```{r}
+# Problema de mismas ubicaciones
+# ffi_prevalence_by_household %>% 
+#   add_count(ffi_gps_long, ffi_gps_lat) %>% 
+#   filter(n >1) %>% 
+#   View()
+
+ffi_prevalence_by_household_sf <- ffi_prevalence_by_household %>% 
+  st_as_sf(
+    coords = c("ffi_gps_long", "ffi_gps_lat"),
+    crs = 4326
+  ) 
+  
+ffi_prevalence_coords <- as(ffi_prevalence_by_household_sf, "Spatial") %>% 
+  coordinates()
+
+ffi_ids <- ffi_prevalence_by_household_sf$cod_id
+
+
+Neigh_nb <- knn2nb(
+  knearneigh(ffi_prevalence_coords,
+             k = 1, 
+             longlat = TRUE), 
+  row.names = ffi_ids
+)
+
+dsts <- unlist(nbdists(Neigh_nb, ffi_prevalence_coords))
+max_1nn <- max(dsts)
+Neigh_kd1 <- dnearneigh(ffi_prevalence_coords,
+                        d1 = 0, 
+                        d2 = max_1nn, 
+                        row.names = ffi_ids)
+
+self <- nb2listw(Neigh_kd1,
+                 style="W", 
+                 zero.policy = T)
+```
+
+```{r}
+breaks <- c(-Inf, -2.58, -1.96, 
+            -1.65, 1.65, 1.96,
+            2.58, Inf)
+labels <- c("Cold spot: 99% confidence", 
+            "Cold spot: 95% confidence", 
+            "Cold spot: 90% confidence", 
+            "PSU Not significant",
+            "Hot spot: 90% confidence",
+            "Hot spot: 95% confidence",
+            "Hot spot: 99% confidence")
+
+w.getis <- ffi_prevalence_by_household_sf %>% 
+  st_set_geometry(NULL) %>% 
+  pivot_longer(
+    cols = c(prevalence_pv:prevalence_exposure),
+    names_to = "type_plasmodium",
+    values_to = "prevalence"
+  ) %>% 
+  group_nest(type_plasmodium) %>% 
+  mutate(
+    LISA = map(data, 
+               ~ localG(.$prevalence, self)),
+    LISA_clust = map(LISA,
+                     ~ cut(., include.lowest = TRUE,
+                           breaks = breaks, 
+                           labels = labels)),
+    LISA_label_orig = map(LISA,
+                          ~ attributes(.)$cluster),
+    LISA = map(LISA, as.numeric)
+  ) %>% 
+  unnest()
+```
+
+
+```{r}
+w.getis <- w.getis %>% 
+  left_join(
+    ffi_household %>% 
+      select(
+        ffi_is_district = ffi_h_district,
+        ffi_is_cod_com = ffi_h_code_community,
+        ffi_is_cod_household = ffi_h_code_household,
+        ffi_gps_lat, 
+        ffi_gps_long
+      )
+  )
+
+w.getis_sf <- w.getis %>% 
+  st_as_sf(coords = c("ffi_gps_long", 
+                      "ffi_gps_lat"),
+           crs = 4326,
+           remove = FALSE)
+
+w.getis_sf
+```
+
+
+
+```{r}
+data("Peru", package = "innovar")
+
+ffi_shp <- Peru %>% 
+  filter(dep == "LORETO",
+         distr %in% c("INDIANA",
+                      "BELEN"))
+
+plot_getis <- ggplot() +
+  geom_sf(data = ffi_shp, fill = "#dcdcdc") + 
+  geom_sf(data = w.getis_sf,
+          aes(col = LISA_clust), 
+          size = 1.5,
+          alpha = 1) +
+  geom_sf(data = ffi_shp, fill = NA) + 
+  innovar::scale_color_innova("npr") +
+  # colorspace::scale_color_discrete_diverging(palette = "Blue-Red",
+  #                                limits = labels) +
+  facet_wrap(vars(type_plasmodium),
+             labeller = labeller(type_plasmodium = c(prevalence_exposure = "Prevalence Recent Exposure",
+                                   prevalence_pf = "Prevalence Recent P. Falciparum",
+                                   prevalence_pv = "Prevalence Recent P. Vivax"))) +
+  labs(color = "Local Indicator of Spatial Association",
+       title = "Spatial Analysis for Recent Exposure") +
+  #guides(colour = guide_legend(override.aes = list(size=10))) +
+  theme_classic(base_size = 12) +
+  theme(
+    legend.title = element_text(
+      face = "bold"
+    ),
+    plot.title = element_text(
+      face = "bold",
+      hjust = 0.5
+    ),
+    strip.text = element_text(
+      face = "bold"
+    )
+  )
+plot_getis
+```
+
+```{r eval = FALSE}
+ggsave("02_output/plots/map_getis_lisa.png",
+       plot_getis,
+       dpi = 400,
+       device = grDevices::png)
+```
+
+
+```{r}
+w.getis %>% 
+  ggplot(
+    aes(x = LISA,
+        fill = ffi_is_district)
+  ) +
+  geom_histogram() +
+  facet_wrap(vars(type_plasmodium)) +
+  theme_minimal()
+
+
+w.getis %>% 
+  ggplot(
+    aes(x = LISA,
+        fill = ffi_is_district)
+  ) +
+  geom_density() +
+  facet_wrap(vars(type_plasmodium)) +
+  theme_minimal()
+```
+
+
+
+
+```{r}
+# resI <- localmoran(ffi_prevalence_by_household_sf$prevalence_exposure,
+#                    nb2listw(Neigh_kd1))
+# 
+# printCoefmat(data.frame(resI),
+#              check.names=FALSE) %>% 
+#   as_tibble() %>% 
+#   mutate(
+#     ffi_is_community = ffi_prevalence_by_household_sf$ffi_is_community,
+#     ffi_is_cod_household = ffi_prevalence_by_household_sf$ffi_is_cod_household,
+#     .before = 1
+#   )
+```
+## Another analysis
 
 ```{r}
 # ffi_prevalence_by_household %>% 
