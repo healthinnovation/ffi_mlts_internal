@@ -484,9 +484,9 @@ communities_distances_hf_sampling <- communities_distances_hf_sampling %>%
   pivot_longer(
     cols = -c(ffi_is_community, ffi_is_district),
     names_to = "ffi_is_health_facility_name",
-    values_to = "distance_to_hf_sampl"
+    values_to = "distance_to_hf_sampl_num"
   ) %>% 
-  mutate(distance_to_hf_sampl = as.numeric(distance_to_hf_sampl))
+  mutate(distance_to_hf_sampl_num = as.numeric(distance_to_hf_sampl_num))
 
 communities_distances_hf_sampling_cat <- communities_sf %>% 
   as_tibble() %>% 
@@ -503,7 +503,7 @@ communities_distances_hf_sampling_cat <- communities_sf %>%
 communities_distances_hf_sampling_cat <- communities_distances_hf_sampling_cat %>% 
   group_by(ffi_is_health_facility_name) %>% 
   mutate(
-    distance_to_hf_sampl = as.numeric(cut_number(distance_to_hf_sampl, 4)),
+    distance_to_hf_sampl = as.numeric(cut_number(distance_to_hf_sampl_num, 4)),
     distance_to_hf_sampl = factor(distance_to_hf_sampl, 
                                   labels = c("Proximate", "Moderate",
                                              "Distant", "Extra Distant"))
@@ -541,13 +541,13 @@ communities_distances_rh_sampling <- enframe(communities_distances_rh_sampling) 
   mutate(
     ffi_is_cod_com = communities_sf$ffi_h_code_community,
     ffi_is_community = communities_sf$ffi_h_community,
-    distance_to_rh_sampl = as.numeric(value),
+    distance_to_rh_sampl_num = as.numeric(value),
     ffi_is_district = communities_sf$ffi_h_district
   ) %>%
   select(-c(name, value)) %>% 
   group_by(ffi_is_district) %>% 
   mutate(
-    distance_to_rh_sampl = as.numeric(cut_number(distance_to_rh_sampl, 4)),
+    distance_to_rh_sampl = as.numeric(cut_number(distance_to_rh_sampl_num, 4)),
     distance_to_rh_sampl = factor(distance_to_rh_sampl, 
                                   labels = c("Proximate", "Moderate",
                                              "Distant", "Extra Distant"))
@@ -572,7 +572,6 @@ communities_distances_rh_sampling %>%
   arrange(ffi_is_district, distance_to_rh_sampl)
 ```
 
-
 Update info:
 
 ```{r}
@@ -580,6 +579,23 @@ ffi_total <- ffi_total %>%
   left_join(
     communities_distances_rh_sampling 
   ) 
+```
+
+## Distance communities to Regional Hospital and Health Facilities (min distance)
+
+```{r}
+ffi_total <- ffi_total %>% 
+  rowwise() %>% 
+  mutate(
+    distance_to_rh_hf_sampl_num = min(distance_to_rh_sampl_num, distance_to_hf_sampl_num)
+  ) %>% 
+  group_by(ffi_is_district) %>% 
+  mutate(
+    distance_to_rh_hf_sampl = as.numeric(cut_number(distance_to_rh_hf_sampl_num, 4)),
+    distance_to_rh_hf_sampl = factor(distance_to_rh_hf_sampl, 
+                                     labels = c("Proximate", "Moderate",
+                                                "Distant", "Extra Distant"))
+  )
 ```
 
 # Distance Group about communities (Method Census)
@@ -4578,6 +4594,79 @@ sero_timeofmalaria_district_distance_rh_sampling
 ggsave(
   "./02_output/plots/plot39_sero_timeofmalaria_district_distance_rh_sampling.png",
   sero_timeofmalaria_district_distance_rh_sampling,
+  dpi = 300,
+  bg = "white",
+  width = 12,
+  height = 8.5
+)
+```
+
+### Towards Regional Hospital and Health Facilities
+
+```{r}
+sero_timeofmalaria_district_distance_rh_hf_sampling <- seropositivy_summarise(
+    ffi_total,
+    "timeofmalaria",
+    age_cat,
+    distance_to_rh_hf_sampl
+  ) %>%
+  ungroup() %>% 
+  mutate(
+    distance_to_rh_hf_sampl = fct_relevel(distance_to_rh_hf_sampl, 
+                                      "Proximate", "Moderate",
+                                      "Distant", "Extra Distant")
+  ) %>% 
+  ggplot(
+    aes(
+      x = age_cat,
+      y = result_exposure,
+      color = exposure,
+      group = exposure
+    )
+  ) +
+  geom_point() +
+  geom_line() +
+  facet_grid(
+    vars(distance_to_rh_hf_sampl),
+    vars(ffi_is_district)    
+  ) +
+  scale_y_continuous(
+    labels = scales::percent_format(),
+    #limits = c(0, 0.50)
+  ) +
+  labs(
+    x = "Age",
+    y = "Seropositivity",
+    title = str_wrap("Seropositivity according to Time of Exposure to malaria by District and distance category of the communities to Iquitos Regional Hospital and Health Facilities on a Sampling Basis", 80)
+  ) +
+  guides(
+    color = guide_legend("Malaria")
+  ) +
+  innovar::scale_color_innova("npr") +
+  theme_bw() +
+  theme(
+    plot.title = element_text(
+      size = 14,
+      hjust = 0.5,
+      face = "bold"
+    ),
+    strip.text = element_text(
+      size = 12,
+      face = "bold"
+    ),
+    legend.title = element_text(
+      size = 12,
+      face = "bold"
+    )
+  )
+
+sero_timeofmalaria_district_distance_rh_hf_sampling
+```
+
+```{r eval=FALSE}
+ggsave(
+  "./02_output/plots/plot39_5_sero_timeofmalaria_district_distance_rh_hf_sampling.png",
+  sero_timeofmalaria_district_distance_rh_hf_sampling,
   dpi = 300,
   bg = "white",
   width = 12,
