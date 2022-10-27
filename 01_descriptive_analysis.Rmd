@@ -4416,7 +4416,7 @@ sero_timeofmalaria_district_distance_rh_census <- seropositivy_summarise(
   labs(
     x = "Age",
     y = "Seropositivity",
-    title = str_wrap("Seropositivity according to Time of Exposure to malaria by District and distance category of the communities to Iquitos Regional Hospital on a Population Basis", 80)
+    title = str_wrap("Seropositivity according to Time of Exposure to malaria by District and distance category of the communities to Loreto Regional Hospital on a Population Basis", 80)
   ) +
   guides(
     color = guide_legend("Malaria")
@@ -4564,7 +4564,7 @@ sero_timeofmalaria_district_distance_rh_sampling <- seropositivy_summarise(
   labs(
     x = "Age",
     y = "Seropositivity",
-    title = str_wrap("Seropositivity according to Time of Exposure to malaria by District and distance category of the communities to Iquitos Regional Hospital on a Sampling Basis", 80)
+    title = str_wrap("Seropositivity according to Time of Exposure to malaria by District and distance category of the communities to Loreto Regional Hospital on a Sampling Basis", 80)
   ) +
   guides(
     color = guide_legend("Malaria")
@@ -4637,7 +4637,7 @@ sero_timeofmalaria_district_distance_rh_hf_sampling <- seropositivy_summarise(
   labs(
     x = "Age",
     y = "Seropositivity",
-    title = str_wrap("Seropositivity according to Time of Exposure to malaria by District and distance category of the communities to Iquitos Regional Hospital and Health Facilities on a Sampling Basis", 80)
+    title = str_wrap("Seropositivity according to Time of Exposure to malaria by District and distance category of the communities to Loreto Regional Hospital and Health Facilities on a Sampling Basis", 80)
   ) +
   guides(
     color = guide_legend("Malaria")
