@@ -127,7 +127,8 @@ ffi_total <- ffi_total %>%
                                   "Primary school",
                                   "Secondary school"),
     economic_activities = factor(ffi_is_main_econ_act,
-                                 labels = c("Day labourer",
+                                 labels = c("None",
+                                            "Day labourer",
                                             "Wood extractor",
                                             "Fisherman",
                                             "Livestock farmer",
@@ -136,7 +137,6 @@ ffi_total <- ffi_total %>%
                                             "Housewife",
                                             "Student",
                                             "Motorcycle taxi driver",
-                                            "None",
                                             "Other")),
     pv_exposure = case_when(
       pv_recent == "Negative" & pv_historic == "Negative" ~ "Negative",
@@ -234,11 +234,6 @@ labelled::var_label(ffi_total) <- list(
   pv_exposure = "P. Vivax Exposure",
   pf_exposure = "P. Falciparum Exposure"
 )
-```
-
-```{r eval = FALSE}
-saveRDS(ffi_total, 
-        file = "01_data/processed/ffi_total.rds")
 ```
 
 # Table descriptive
@@ -743,7 +738,7 @@ communities_distances_rh_cat <- communities_distances_rh %>%
                             labels = c("Proximate", "Moderate",
                                        "Distant", "Extra Distant"))
   ) %>% 
-  distinct(ffi_is_community, ffi_is_district)
+  distinct(ffi_is_community, ffi_is_district, .keep_all = TRUE)
 ```
 
 Update info:
@@ -753,6 +748,18 @@ ffi_total <- ffi_total %>%
   left_join(
     communities_distances_rh_cat
   )
+```
+
+
+```{r eval = FALSE}
+saveRDS(ffi_total, 
+        file = "01_data/processed/ffi_total.rds")
+```
+
+
+```{r}
+ffi_total <- ffi_total %>% 
+  drop_na(pf_recent)
 ```
 
 
@@ -4578,6 +4585,226 @@ ggsave(
 )
 ```
 
+## Treemap by Communities
+
+```{r}
+library(treemapify)
+```
+
+```{r fig.height = 7, fig.width = 10, dpi = 300, fig.align = "center"}
+district_label <- ffi_total %>% 
+  count(ffi_is_district) %>% 
+  mutate(label = paste0(ffi_is_district, 
+                        " (n = ", n, ")")) %>% 
+  pull(label)
+
+names(district_label) <- unique(ffi_total$ffi_is_district)
+
+plot_40 <- ffi_total %>% 
+  count(ffi_is_district, 
+        ffi_is_community,
+        ffi_is_cod_com) %>% 
+  mutate(
+    label_com = paste(str_to_title(ffi_is_community),
+                      paste0("(",  n, ")"), sep = "\n"),
+    label_com = str_wrap(label_com, 10)
+  ) %>% 
+  ggplot(aes(area = n,
+             fill = n,
+             label = label_com,
+             subgroup = ffi_is_district)) +
+  geom_treemap() +
+  geom_treemap_text(colour = "black",
+                    place = "centre") +
+  # geom_treemap_subgroup_text(place = "top", 
+  #                            grow = TRUE, alpha = 1, 
+  #                            colour = "black", fontface = "italic",
+  #                            min.size = 0,
+  #                            padding.y = grid::unit(-50, "mm")) +
+  geom_treemap_subgroup_border() +
+  innovar::scale_fill_innova("npr",
+                             discrete = FALSE) +
+  facet_wrap(vars(ffi_is_district),
+             labeller = labeller(ffi_is_district = district_label)) +
+  labs(
+    title = "Sample size for each community by district"
+  ) +
+  theme_classic() +
+  theme(
+    plot.title = element_text(size = 14,
+                              hjust = 0.5,
+                              face = "bold"),
+    strip.text = element_text(size = 14,
+                              face = "bold")
+  )
+
+plot_40
+```
+
+
+```{r eval=FALSE}
+ggsave("./02_output/plots/40. Sample size for each community by district.png",
+       plot = plot_40,
+       height = 7,
+       width = 10,
+       dpi = 300)
+```
+
+## General Population by age plot
+
+
+```{r fig.height = 7, fig.width = 10, dpi = 300, fig.align = "center"}
+plot_41 <- apyramid::age_pyramid(data = ffi_total,
+                                 age_group = "age_cat",
+                                 split_by = "gender",
+                                 proportional = TRUE) +
+  # scale_fill_brewer(palette = "Set2") +
+  scale_fill_manual(
+    values = c("#4cd477", "#dc8131")
+  ) +
+  labs(
+    x = "Age Group",
+    y = NULL,
+    title = "Population structure by age groups and sex"
+  ) +
+  guides(
+    fill = guide_legend("Gender")
+  ) +
+  innovar::scale_fill_innova("npr") +
+  theme_bw(base_size = 12) +
+  theme(
+    plot.title = element_text(size = 14,
+                              hjust = 0.5,
+                              face = "bold"),
+    strip.text = element_text(size = 12,
+                              face = "bold"),
+    legend.title = element_text(size = 12,
+                              face = "bold"),
+    plot.margin = margin(5, 15, 5, 15)
+  )
+    
+plot_41
+```
+
+```{r eval=FALSE}
+ggsave("./02_output/plots/41. Population structure by age groups and sex.png",
+       plot = plot_41,
+       height = 7,
+       width = 10,
+       dpi = 300)
+```
+
+## Economic activity for each gender by education level and gender
+
+```{r fig.height = 8, fig.width = 14, dpi = 300, fig.align = "center"}
+na_education_activities <- ffi_total %>% 
+  hacksaw::keep_na(education_level,
+                   economic_activities,
+                   .logic = "OR") %>% 
+  count()
+
+label_x_economics <- ffi_total %>% 
+  drop_na(education_level, economic_activities) %>% 
+  count(gender, economic_activities,
+        .drop = FALSE) %>% 
+  mutate(
+    economic_activities = fct_reorder(economic_activities, n,
+                                           .desc = TRUE)
+  )
+
+facet_label_gender <- ffi_total %>% 
+  count(gender) %>% 
+  mutate(label = paste0(gender, " (n = ", n, ")")) %>% 
+  pull(label)
+
+names(facet_label_gender) <- unique(ffi_total$gender)
+
+
+add_economics_na <- label_x_economics %>% 
+  filter(n == 0) %>% 
+  mutate(education_level = NA,
+         percentage = 1)
+
+
+descriptive_economics_education <- ffi_total %>% 
+  drop_na(education_level, economic_activities) %>% 
+  count(gender, economic_activities, education_level,
+        .drop = FALSE) %>% 
+  group_by(gender, economic_activities) %>% 
+  mutate(percentage = n/sum(n)) %>% 
+  ungroup() %>% 
+  mutate(
+    economic_activities = fct_relevel(economic_activities,
+                                      levels(label_x_economics$economic_activities))
+  ) %>% 
+  anti_join(
+    add_economics_na %>% 
+      select(gender, economic_activities)
+  ) %>% 
+  bind_rows(
+    add_economics_na
+  )
+
+
+plot_42 <- descriptive_economics_education %>% 
+  ggplot(aes(x = economic_activities,
+             y = percentage,
+             fill = education_level)) +
+  geom_col() +
+  facet_wrap(vars(gender),
+             labeller = labeller(gender = facet_label_gender)) +
+  # scale_y_continuous(labels = scales::percent_format()) +
+  scale_y_continuous(
+    breaks = c(0, 0.25, 0.5, 0.75, 1, 1.05),
+    labels = c(scales::percent(seq(0, 1, 0.25)), "n")
+  ) +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 18)) +
+  labs(
+    x = NULL,
+    y = NULL,
+    title = str_wrap("Main economic activity for each gender by education level and gender",
+                     40),
+    caption = paste0("Note: ", na_education_activities, " data were excluded due to NA")
+  ) +
+  guides(
+    fill = guide_legend("Education Level")
+  ) +
+  geom_text(data = label_x_economics,
+            aes(x = economic_activities,
+                y = 1.05,
+                label = n),
+            inherit.aes = FALSE) +
+  innovar::scale_fill_innova("npr",
+                             breaks = levels(ffi_total$education_level),
+                             na.value = "#a2a2a2") +
+  theme_void(base_size = 12) +
+  theme(
+    plot.title = element_text(size = 14,
+                              hjust = 0.5,
+                              face = "bold"),
+    strip.text = element_text(size = 12,
+                              face = "bold"),
+    axis.text.y = element_text(face = c(rep("plain", 5), "bold"),
+                               size = c(rep(10, 5), 14)),
+    axis.text.x = element_text(size = 12,
+                               angle = 45,
+                               vjust = 1,
+                               hjust = 1),
+    plot.margin = margin(5, 15, 5, 15)
+  )
+
+plot_42
+```
+
+
+```{r eval=FALSE}
+ggsave("./02_output/plots/42. Main economic activity for each gender by education level and gender.png",
+       plot = plot_42,
+       height = 8,
+       width = 14,
+       dpi = 300,
+       bg = "white")
+```
 
 # Maps
 
