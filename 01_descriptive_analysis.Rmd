@@ -808,23 +808,23 @@ communities_sf2 <- communities_sf %>%
                    "ffi_h_community" = "ffi_is_community"))
 
 
-od_hf_communities <- communities_sf %>% 
-  as_tibble() %>% 
-  select(O = ffi_h_health_facility_name,
-         D = ffi_h_community)
-
-places_togueter <- hf_shp %>% 
-  rename(Place = ffi_h_health_facility_name) %>% 
-  select(-District) %>% 
-  mutate(Type = "Health Facility") %>% 
-  bind_rows(
-    communities_sf %>% 
-      select(Place = ffi_h_community) %>% 
-      mutate(Type = "Community")
-  )
-
-places_sf_linestring <- od::od_to_sf(od_hf_communities,
-                                     places_togueter)
+# od_hf_communities <- communities_sf %>% 
+#   as_tibble() %>% 
+#   select(O = ffi_h_health_facility_name,
+#          D = ffi_h_community)
+# 
+# places_togueter <- hf_shp %>% 
+#   rename(Place = ffi_h_health_facility_name) %>% 
+#   select(-District) %>% 
+#   mutate(Type = "Health Facility") %>% 
+#   bind_rows(
+#     communities_sf %>% 
+#       select(Place = ffi_h_community) %>% 
+#       mutate(Type = "Community")
+#   )
+# 
+# places_sf_linestring <- od::od_to_sf(od_hf_communities,
+#                                      places_togueter)
 ```
 
 
@@ -835,44 +835,49 @@ distr_shp <- Peru %>%
   filter(prov == "MAYNAS",
          distr %in% c("INDIANA", "BELEN")) 
 
-map_linedash <- ggmap(ph_basemap) +
+map_by_hf <- ggmap(ph_basemap) +
   coord_sf(crs = st_crs(4326)) +
   geom_sf(data = distr_shp %>% 
             mutate(distr = str_to_title(distr)),
-          aes(fill = distr),
+          #aes(fill = distr),
           size = 1,
           alpha = 0.5,
           color = "black",
           inherit.aes = FALSE) +
-  scale_fill_manual(
-    values = c("#64b2af", "#feee67")
-  ) + 
+  # scale_fill_manual(
+  #   values = c("#64b2af", "#feee67")
+  # ) + 
   geom_sf(data = communities_sf2 %>% 
-            mutate(Type = "Community (38)"),
+            mutate(Type = "Community (38)",
+                   ffi_h_health_facility_name = str_to_title(ffi_h_health_facility_name)),
           aes(size = sampling_size,
               shape = Type,
-              color = Type),
+              #color = Type,
+              color = ffi_h_health_facility_name),
           alpha = 0.8,
           inherit.aes = FALSE) +
   geom_sf(data = hf_shp %>% 
-            mutate(Type = "Health Facility (9)"),
+            mutate(Type = "Health Facility (9)",
+                   ffi_h_health_facility_name = str_to_title(ffi_h_health_facility_name)),
           aes(shape = Type,
-              color = Type),
+              #color = Type,
+              color = ffi_h_health_facility_name),
           size = 5,
           inherit.aes = FALSE
           ) +
   # ggsflabel::geom_sf_text_repel(data = hf_shp,
   #                               aes(label = ffi_h_health_facility_name),
   #                               inherit.aes = FALSE) +
-  geom_sf(data = places_sf_linestring,
-          linetype = "dashed",
-          inherit.aes = FALSE) +
+  # geom_sf(data = places_sf_linestring,
+  #         linetype = "dashed",
+  #         inherit.aes = FALSE) +
   scale_shape_manual(
     values = c(16, 18)
   ) +
-  scale_color_manual(
-    values = c("black", "red")
-  ) + 
+  innovar::scale_color_innova("npr") +
+  # scale_color_manual(
+  #   values = c("black", "red")
+  # ) + 
   # ggsflabel::geom_sf_text_repel(data = hf_shp,
   #                               aes(label = label2),
   #                               force = 10,
@@ -889,7 +894,8 @@ map_linedash <- ggmap(ph_basemap) +
        title = "Communities and Health Facilities for the Study") +
   guides(
     size = guide_legend("Sampling size"),
-    fill = guide_legend("District")
+    fill = guide_legend("District"),
+    color = guide_legend("Health Facilities")
   ) +
   theme_bw(base_size = 12) + 
   theme(
@@ -897,12 +903,12 @@ map_linedash <- ggmap(ph_basemap) +
                               hjust = 0.5,
                               face = "bold")
   )
-map_linedash
+map_by_hf
 ```
 
 ```{r}
-ggsave("02_output/plots/map_communities_hf_dashed.png",
-       map_linedash,
+ggsave("02_output/plots/map_communities_hf_.png",
+       map_by_hf,
        dpi = 400,
        device = grDevices::png,
        height = 5,
