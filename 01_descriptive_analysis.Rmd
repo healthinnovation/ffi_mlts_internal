@@ -912,7 +912,8 @@ ggsave("02_output/plots/map_communities_hf_.png",
        dpi = 400,
        device = grDevices::png,
        height = 5,
-       width = 7)
+       width = 7,
+       scale = 1.2)
 ```
 
 
@@ -5022,6 +5023,15 @@ communities_sf <- communities_sf %>%
     )
   )
 
+  geom_sf(data = hf_shp %>% 
+            mutate(Type = "Health Facility (9)",
+                   ffi_h_health_facility_name = str_to_title(ffi_h_health_facility_name)),
+          aes(shape = Type,
+              #color = Type,
+              color = ffi_h_health_facility_name),
+          size = 5,
+          inherit.aes = FALSE
+          ) 
 
 
 household_communities_leaft <- ffi_household_gps %>%
@@ -5075,6 +5085,15 @@ household_communities_leaft <- ffi_household_gps %>%
     label = ~ffi_h_community_label,
     group = "Communities"
   ) %>%
+  addCircleMarkers(
+    data = hf_shp %>% 
+      mutate(
+        ffi_h_health_facility_name = str_to_title(ffi_h_health_facility_name)
+      ),
+    layerId = ~ffi_h_health_facility_name,
+    label = ~ffi_h_health_facility_name,
+    group = "Health Facilities"
+  ) %>% 
   addProviderTiles(
     providers$OpenStreetMap,
     group = "OpenStreetMap"
@@ -5099,7 +5118,7 @@ household_communities_leaft <- ffi_household_gps %>%
   ) %>%
   # Layers control*
   addLayersControl(
-    overlayGroups = c("Households", "Communities"),
+    overlayGroups = c("Households", "Communities", "Health Facilities"),
     baseGroups = c("OpenStreetMap", "Google Maps", "Satellite View"),
     options = layersControlOptions(collapsed = FALSE)
   ) %>%
