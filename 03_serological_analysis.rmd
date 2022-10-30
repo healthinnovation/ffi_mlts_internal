@@ -182,9 +182,11 @@ force_infection <- ffi_tidy %>%
 		# 	)
 		# )
 	)
+```
 
-
-
+Try only with the first type of plasmodium:
+```{r}
 simple.rcm.analysis(force_infection$data_sero[[1]], analysis = "split-unshared-rho", int.rho = c(0.001, 0.05))
 ```
+
 
