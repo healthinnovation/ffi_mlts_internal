@@ -5047,7 +5047,7 @@ household_communities_leaft <- ffi_household_gps %>%
     group = "Households",
     radius = 7,
     weight = 5,
-    opacity = 1,
+    opacity = 0.6,
     fillOpacity = 0.1,
     labelOptions = labelOptions(
       style = list(
