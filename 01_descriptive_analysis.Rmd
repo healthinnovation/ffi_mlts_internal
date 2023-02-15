@@ -30,7 +30,7 @@ library(ggsflabel)
 # Import data
 
 ```{r}
-serology <- read_csv("./01_data/raw/FFI.peru.serology.kmeans2.csv") %>%
+serology <- read_csv("./01_data/raw/FFI.peru.serology.kmeans2.4000.csv") %>%
   rename(ffi_is_code = Codigo) %>%
   select(-1)
 
@@ -227,6 +227,9 @@ labelled::var_label(ffi_total) <- list(
   age_cat = "Age",
   education_level = "Education Level",
   economic_activities = "Economic Activities",
+  ffi_is_place_shower	= "Usual places to bathe",
+  ffi_is_mosq_net = "Mosquito Net",
+  ffi_is_malaria = "Ever had malaria",
   pf_recent = "Recent P. Falciparum",
   pf_historic = "Historical P. Falciparum",
   pv_recent = "Recent P. Vivax",
@@ -260,22 +263,32 @@ table_1 <- ffi_total %>%
     age_cat,
     education_level,
     economic_activities,
+    ffi_is_place_shower,
+    ffi_is_mosq_net,
+    ffi_is_malaria,
     pf_recent:pv_historic
   ) %>%
+  drop_na(pf_recent:pv_historic) %>% 
   tbl_summary(
     by = "ffi_is_district",
-    missing_text = "Missing"
+    missing_text = "Missing",
+    type = all_dichotomous() ~ "categorical",
+    digits = everything() ~ c(0, 1)
   ) %>%
   add_n() %>%
-  add_overall() %>%
+  add_overall(
+    last = TRUE,
+    digits = everything() ~ c(0, 1)
+  ) %>%
   add_p(
-     test = list(all_categorical() ~ "fisher.test.simulate.p.values")
+     test = list(all_categorical() ~ "fisher.test.simulate.p.values"),
+     pvalue_fun = scales::pvalue
   ) %>% 
   bold_p() %>%
   modify_header(label = "**Variable**") %>%
   bold_labels()
   
-table1
+table_1
 ```
 
 ```{r eval=FALSE}
@@ -284,44 +297,61 @@ table_1 %>%
   flextable::save_as_docx(path = "./02_output/reports/table1.docx")
 ```
 
-## Table for Plasmodium
+## Table for Plasmodium and Exposure Time
+
 ```{r}
- table2 <- ffi_total %>%
-   select(
-     gender,
-     age_cat,
-     education_level,
-     economic_activities,
-     pf_exposure,
-     pv_exposure
-   ) %>%
-   drop_na(pf_exposure, pv_exposure) %>%
-   pivot_longer(
-     cols = pv_exposure:pf_exposure,
-     names_to = "exposure",
-     values_to = "result_exposure"
-   ) %>%
-   mutate(
+table2 <- ffi_total %>%
+  select(
+    gender,
+    age_cat,
+    education_level,
+    economic_activities,
+    ffi_is_place_shower,
+    ffi_is_mosq_net,
+    ffi_is_malaria,
+    pf_exposure,
+    pv_exposure,
+    recent_exposure,
+    historical_exposure
+  ) %>%
+  drop_na(pf_exposure, pv_exposure,
+          recent_exposure, historical_exposure) %>%
+  pivot_longer(
+    cols = pf_exposure:historical_exposure,
+    names_to = "exposure",
+    values_to = "result_exposure"
+  ) %>%
+  mutate(
     exposure = case_when(
       exposure == "pv_exposure" ~ "P. Vivax Exposure",
-      exposure == "pf_exposure" ~ "P. Falciparum Exposure"
-    )
-   ) %>%
-   tbl_strata(
-    strata = exposure,
-    .tbl_fun =
-      ~ .x %>%
-          tbl_summary(
-            by = result_exposure,
-            missing_text = "Missing"
-          ) %>%
-          add_p(
-            test = list(all_categorical() ~ "fisher.test.simulate.p.values")
-          ) %>%
-          bold_p() %>%
-          modify_header(label = "**Variable**") %>%
-          bold_labels() 
-   ) 
+      exposure == "pf_exposure" ~ "P. Falciparum Exposure",
+      exposure == "recent_exposure" ~ "Recent Exposure",
+      exposure == "historical_exposure" ~ "Historical Exposure"
+      ),
+    exposure = factor(exposure,
+                      levels = c("P. Vivax Exposure",
+                                 "P. Falciparum Exposure",
+                                 "Recent Exposure",
+                                 "Historical Exposure"))
+  ) %>%
+  tbl_strata(
+  strata = exposure,
+  .tbl_fun =
+    ~ .x %>%
+        tbl_summary(
+          by = result_exposure,
+          missing_text = "Missing",
+          type = all_dichotomous() ~ "categorical",
+          digits = everything() ~ c(0, 1)
+        ) %>%
+        add_p(
+          test = list(all_categorical() ~ "fisher.test.simulate.p.values"),
+          pvalue_fun = scales::pvalue
+        ) %>%
+        bold_p() %>%
+        modify_header(label = "**Variable**") %>%
+        bold_labels() 
+  ) 
 
 table2_overall <- ffi_total %>%
   select(
@@ -329,12 +359,14 @@ table2_overall <- ffi_total %>%
     age_cat,
     education_level,
     economic_activities,
-    pf_exposure,
-    pv_exposure
+    ffi_is_place_shower,
+    ffi_is_mosq_net,
+    ffi_is_malaria
   ) %>%
-  drop_na(pf_exposure, pv_exposure) %>%
   tbl_summary(
-    missing_text = "Missing"
+    missing_text = "Missing",
+    type = all_dichotomous() ~ "categorical",
+    digits = everything() ~ c(0, 1)
   ) %>%
   modify_header(
     label = "**Variable**"
@@ -356,78 +388,6 @@ table2 %>%
   flextable::save_as_docx(path = "./02_output/reports/table2.docx")
 ```
 
-## Table for Exposure Time
-
-```{r}
- table3 <- ffi_total %>%
-   select(
-     gender,
-     age_cat,
-     education_level,
-     economic_activities,
-     recent_exposure,
-     historical_exposure
-   ) %>%
-   drop_na(recent_exposure, historical_exposure) %>%
-   pivot_longer(
-     cols = recent_exposure:historical_exposure,
-     names_to = "exposure",
-     values_to = "result_exposure"
-   ) %>%
-   mutate(
-    exposure = case_when(
-      exposure == "recent_exposure" ~ "Recent Exposure",
-      exposure == "historical_exposure" ~ "Historical Exposure"
-    )
-   ) %>%
-   tbl_strata(
-    strata = exposure,
-    .tbl_fun =
-      ~ .x %>%
-          tbl_summary(
-            by = result_exposure,
-            missing_text = "Missing"
-          ) %>%
-          add_p(
-            test = list(all_categorical() ~ "fisher.test.simulate.p.values")
-          ) %>%
-          bold_p() %>%
-          modify_header(label = "**Variable**") %>%
-          bold_labels() 
-   ) 
-
-table3_overall <- ffi_total %>%
-  select(
-    gender,
-    age_cat,
-    education_level,
-    economic_activities,
-    recent_exposure,
-    historical_exposure
-  ) %>%
-  drop_na(recent_exposure, historical_exposure) %>%
-  tbl_summary(
-    missing_text = "Missing"
-  ) %>%
-  modify_header(
-    label = "**Variable**"
-  ) %>%
-  bold_labels() %>%
-  modify_spanning_header(stat_0 ~ "**Overall**")
-
-table3 <- tbl_merge(
-  tbls = list(table3, table3_overall),
-  tab_spanner = FALSE
-)
-
-table3
-```
-
-```{r eval=FALSE}
-table3 %>%
-  as_flex_table() %>%
-  flextable::save_as_docx(path = "./02_output/reports/table3.docx")
-```
 
 # Distance Group about communities (Method Sampling)
 
@@ -595,7 +555,8 @@ ffi_total <- ffi_total %>%
     distance_to_rh_hf_sampl = factor(distance_to_rh_hf_sampl, 
                                      labels = c("Proximate", "Moderate",
                                                 "Distant", "Extra Distant"))
-  )
+  ) %>% 
+  ungroup()
 ```
 
 # Distance Group about communities (Method Census)
@@ -697,15 +658,22 @@ communities_distances_hf_total <- comunidades_info_total %>%
   )
   
   
-communities_distances_hf_cat <- communities_distances_hf_total %>% 
-  filter(ffi_is_health_facility_name != "SOLEDAD DE VILLA BELEN") %>% 
-  group_by(ffi_is_health_facility_name) %>% 
+communities_distances_hf_cat <- communities_distances_hf_total %>%
+  filter(ffi_is_health_facility_name != "SOLEDAD DE VILLA BELEN") %>%
+  group_by(ffi_is_health_facility_name) %>%
   mutate(
     distance_to_hf_census = as.numeric(cut_number(distance_to_hf_census, 4)),
-    distance_to_hf_census = factor(distance_to_hf_census, 
-                            labels = c("Proximate", "Moderate",
-                                       "Distant", "Extra Distant"))
-  ) %>% 
+    distance_to_hf_census = factor(
+      distance_to_hf_census,
+      labels = c(
+        "Proximate",
+        "Moderate",
+        "Distant",
+        "Extra Distant"
+      )
+    )
+  ) %>%
+  ungroup() %>%
   bind_rows(
     communities_distances_hf_total %>% 
       filter(ffi_is_health_facility_name == "SOLEDAD DE VILLA BELEN") %>% 
@@ -744,16 +712,23 @@ communities_distances_rh <- comunidades_info_total %>%
 ```
 
 ```{r}
-communities_distances_rh_cat <- communities_distances_rh %>% 
-  drop_na(distance_to_rh_census) %>% 
-  arrange(ffi_is_district, distance_to_rh_census) %>% 
-  group_by(ffi_is_district) %>% 
+communities_distances_rh_cat <- communities_distances_rh %>%
+  drop_na(distance_to_rh_census) %>%
+  arrange(ffi_is_district, distance_to_rh_census) %>%
+  group_by(ffi_is_district) %>%
   mutate(
     distance_to_rh_census = as.numeric(cut_number(distance_to_rh_census, 4)),
-    distance_to_rh_census = factor(distance_to_rh_census, 
-                            labels = c("Proximate", "Moderate",
-                                       "Distant", "Extra Distant"))
-  ) %>% 
+    distance_to_rh_census = factor(
+      distance_to_rh_census,
+      labels = c(
+        "Proximate",
+        "Moderate",
+        "Distant",
+        "Extra Distant"
+      )
+    )
+  ) %>%
+  ungroup() %>%
   distinct(ffi_is_community, ffi_is_district, .keep_all = TRUE)
 ```
 
@@ -770,12 +745,6 @@ ffi_total <- ffi_total %>%
 ```{r eval = FALSE}
 saveRDS(ffi_total, 
         file = "01_data/processed/ffi_total.rds")
-```
-
-
-```{r}
-ffi_total <- ffi_total %>% 
-  drop_na(pf_recent)
 ```
 
 
@@ -1047,9 +1016,6 @@ ggsave(
 
 plot1 <- ffi_total %>%
   drop_na(pf_recent:pv_historic) %>%
-  left_join(
-    communities_distances
-  )  %>%
   pivot_longer(
     cols = pf_recent:pv_historic,
     names_to = "malaria",
@@ -1071,7 +1037,7 @@ plot1 <- ffi_total %>%
     ),
     ffi_is_community = fct_reorder(
       ffi_is_community,
-      distance,
+      distance_to_rh_sampl_num,
       .desc = TRUE
     )
   ) %>%
@@ -1129,9 +1095,6 @@ ggsave(
 ```{r}
 plot1_indiana <- ffi_total %>%
   drop_na(pf_recent:pv_historic) %>%
-  left_join(
-    communities_distances
-  )  %>%
   pivot_longer(
     cols = pf_recent:pv_historic,
     names_to = "malaria",
@@ -1150,7 +1113,7 @@ plot1_indiana <- ffi_total %>%
   mutate(
     ffi_is_community = fct_reorder(
       ffi_is_community,
-      distance,
+      distance_to_rh_sampl_num,
       .desc = TRUE
     )
   ) %>%
@@ -1209,9 +1172,6 @@ ggsave(
 ```{r}
 plot1_belen <- ffi_total %>%
   drop_na(pf_recent:pv_historic) %>%
-  left_join(
-    communities_distances
-  ) %>%
   pivot_longer(
     cols = pf_recent:pv_historic,
     names_to = "malaria",
@@ -1228,7 +1188,7 @@ plot1_belen <- ffi_total %>%
     ffi_is_community = str_to_title(ffi_is_community),
     ffi_is_community = fct_reorder(
       ffi_is_community,
-      distance,
+      distance_to_rh_sampl_num,
       .desc = TRUE
     )
   ) %>%
@@ -1286,9 +1246,6 @@ ggsave(
 ```{r}
 plot2 <- ffi_total %>%
   drop_na(pf_exposure, pv_exposure) %>%
-  left_join(
-    communities_distances
-  ) %>%
   pivot_longer(
     cols = pv_exposure:pf_exposure,
     names_to = "exposure",
@@ -1308,7 +1265,7 @@ plot2 <- ffi_total %>%
     ),
     ffi_is_community = fct_reorder(
       ffi_is_community,
-      distance,
+      distance_to_rh_sampl_num,
       .desc = TRUE
     )
   ) %>%
@@ -1365,9 +1322,6 @@ ggsave(
 ```{r}
 plot3 <- ffi_total %>%
   drop_na(recent_exposure, historical_exposure) %>%
-  left_join(
-    communities_distances
-  ) %>%
   pivot_longer(
     cols = recent_exposure:historical_exposure,
     names_to = "exposure",
@@ -1387,7 +1341,7 @@ plot3 <- ffi_total %>%
     ),
     ffi_is_community = fct_reorder(
       ffi_is_community,
-      distance,
+      distance_to_rh_sampl_num,
       .desc = TRUE
     )
   ) %>%
@@ -1780,7 +1734,7 @@ ggsave(
 )
 ```
 
-## Seopositivity by Type of Malaria
+## Seropositivity by Type of Malaria
 
 ### By District
 
@@ -1834,6 +1788,8 @@ sero_typeofmalaria_district <- ffi_typeof_malaria %>%
   ) +
   innovar::scale_color_innova("npr") +
   theme_bw()
+
+sero_typeofmalaria_district
 ```
 
 ```{r eval=FALSE}
@@ -2032,7 +1988,8 @@ seropositivy_summarise <- function(data, type, variable, ...) {
         )
       ) %>%
       group_by(ffi_is_district, {{ variable }}, ..., malaria) %>%
-      summarise(result_malaria = mean(result_malaria))
+      summarise(result_malaria = mean(result_malaria))  %>%
+      ungroup()
   } else if (type == "typeofmalaria" ) {
     ffi_total %>%
       drop_na(pf_exposure, pv_exposure, {{ variable }}, ...) %>%
@@ -2056,7 +2013,8 @@ seropositivy_summarise <- function(data, type, variable, ...) {
         )
       ) %>%
       group_by(ffi_is_district, {{ variable }}, ..., exposure) %>%
-      summarise(result_exposure = mean(result_exposure))
+      summarise(result_exposure = mean(result_exposure)) %>%
+      ungroup()
   } else if (type == "timeofmalaria") {
     ffi_total %>%
       drop_na(recent_exposure, historical_exposure, 
@@ -2081,7 +2039,8 @@ seropositivy_summarise <- function(data, type, variable, ...) {
         )
       ) %>%
       group_by(ffi_is_district, {{ variable }}, ..., exposure) %>%
-      summarise(result_exposure = mean(result_exposure))      
+      summarise(result_exposure = mean(result_exposure)) %>%
+      ungroup()
   }  
 }
 ```
@@ -2455,6 +2414,8 @@ sero_4malaria_fever_month <- ffi_fever_month %>%
   ) +
   innovar::scale_color_innova("npr") +
   theme_bw()
+  
+sero_4malaria_fever_month
 ```
 
 ```{r eval=FALSE}
@@ -2526,6 +2487,8 @@ sero_typeofmalaria_fever_month <- ffi_fever_month_typeofmalaria %>%
   ) +
   innovar::scale_color_innova("npr") +
   theme_bw()
+
+sero_typeofmalaria_fever_month
 ```
 
 ```{r eval=FALSE}
@@ -2795,13 +2758,15 @@ ffi_4malaria_mal_lifetime <- ffi_total %>%
     across(
       c(ffi_is_community:ffi_is_health_facility_name),
       str_to_title
-    )
+    ),
+    age_code = as.numeric(age_code)
   ) %>%
   group_by(ffi_is_mal_lifetime, age_code, malaria) %>%
-  summarise(result_malaria = mean(result_malaria))
+  summarise(result_malaria = mean(result_malaria)) %>%
+  ungroup()
+  
 
-add_na_ffi_4malaria_mal_lifetime <- ffi_4malaria_mal_lifetime %>% 
-  ungroup() %>% 
+add_na_ffi_4malaria_mal_lifetime <- ffi_4malaria_mal_lifetime %>%
   count(ffi_is_mal_lifetime, age_code) %>% 
   pivot_wider(
     names_from = age_code,
@@ -2815,7 +2780,7 @@ add_na_ffi_4malaria_mal_lifetime <- ffi_4malaria_mal_lifetime %>%
     values_to = "malaria"
   ) %>% 
   add_case(
-    ffi_is_mal_lifetime = "More than 7 times",
+    ffi_is_mal_lifetime = "More Than 7 Times",
     age_code = "3"
   ) %>% 
   mutate(
@@ -2916,13 +2881,14 @@ ffi_recentmalaria_mal_lifetime <- ffi_total %>%
     across(
       c(ffi_is_community:ffi_is_health_facility_name),
       str_to_title
-    )
+    ),
+    age_code = as.numeric(age_code)
   ) %>%
   group_by(ffi_is_mal_lifetime, age_code, malaria) %>%
-  summarise(result_malaria = mean(result_malaria))
+  summarise(result_malaria = mean(result_malaria)) %>%
+  ungroup()
 
 add_na_recentmalaria_mal_lifetime <- ffi_recentmalaria_mal_lifetime %>% 
-  ungroup() %>% 
   count(ffi_is_mal_lifetime, age_code) %>% 
   pivot_wider(
     names_from = age_code,
@@ -2936,7 +2902,7 @@ add_na_recentmalaria_mal_lifetime <- ffi_recentmalaria_mal_lifetime %>%
     values_to = "malaria"
   ) %>% 
   add_case(
-    ffi_is_mal_lifetime = "More than 7 times",
+    ffi_is_mal_lifetime = "More Than 7 Times",
     age_code = "3"
   ) %>% 
   mutate(
@@ -3038,13 +3004,14 @@ ffi_historicmalaria_mal_lifetime <- ffi_total %>%
     across(
       c(ffi_is_community:ffi_is_health_facility_name),
       str_to_title
-    )
+    ),
+    age_code = as.numeric(age_code)
   ) %>%
   group_by(ffi_is_mal_lifetime, age_code, malaria) %>%
-  summarise(result_malaria = mean(result_malaria))
+  summarise(result_malaria = mean(result_malaria)) %>%
+  ungroup()
 
 add_na_historicmalaria_mal_lifetime <- ffi_historicmalaria_mal_lifetime %>% 
-  ungroup() %>% 
   count(ffi_is_mal_lifetime, age_code) %>% 
   pivot_wider(
     names_from = age_code,
@@ -3058,7 +3025,7 @@ add_na_historicmalaria_mal_lifetime <- ffi_historicmalaria_mal_lifetime %>%
     values_to = "malaria"
   ) %>% 
   add_case(
-    ffi_is_mal_lifetime = "More than 7 times",
+    ffi_is_mal_lifetime = "More Than 7 Times",
     age_code = "3"
   ) %>% 
   mutate(
@@ -3457,6 +3424,12 @@ sero_4malaria_district_tripmonth <- seropositivy_summarise(
   age_cat,
   ffi_is_trip_month
 ) %>%
+  mutate(
+    ffi_is_trip_month = fct_relevel(
+      ffi_is_trip_month,
+      "No", "Yes", "Don't Know/No Answer"
+    ),
+  ) %>%
   ggplot(
     aes(
       x = age_cat,
@@ -3508,6 +3481,14 @@ sero_typeofmalaria_district_tripmonth <- seropositivy_summarise(
   age_cat,
   ffi_is_trip_month
 ) %>%
+  mutate(
+    ffi_is_trip_month = fct_relevel(
+      ffi_is_trip_month,
+      "No",
+      "Yes",
+      "Don't Know/No Answer"
+    ),
+  ) %>%
   ggplot(
     aes(
       x = age_cat,
@@ -3559,6 +3540,14 @@ sero_timeofmalaria_district_tripmonth <- seropositivy_summarise(
   age_cat,
   ffi_is_trip_month
 ) %>%
+  mutate(
+    ffi_is_trip_month = fct_relevel(
+      ffi_is_trip_month,
+      "No",
+      "Yes",
+      "Don't Know/No Answer"
+    ),
+  ) %>%
   ggplot(
     aes(
       x = age_cat,
@@ -3738,6 +3727,7 @@ plot_4_2
 ## Sankey_seropositive
 
 ```{r}
+#devtools::install_github("davidsjoberg/ggsankey")
 library(ggsankey)
 ```
 
@@ -4142,9 +4132,6 @@ add_cases_0_district_gender_economic <- structure_df_district_gender_economic %>
   mutate(
     result_malaria = 0
   )
-
-
-
 ```
 
 
@@ -4609,6 +4596,44 @@ ggsave(
 ```
 
 ### Towards Regional Hospital and Health Facilities
+
+```{r}
+sero_time_age_distance <- seropositivy_summarise(
+    ffi_total,
+    "timeofmalaria",
+    age_cat,
+    distance_to_rh_hf_sampl
+  ) %>%
+  ungroup() %>%
+  mutate(
+    distance_to_rh_hf_sampl = fct_relevel(
+      distance_to_rh_hf_sampl,
+      "Proximate",
+      "Moderate",
+      "Distant",
+      "Extra Distant"
+    )
+  ) 
+  
+
+sero_time_age_distance %>%
+  group_by(ffi_is_district, exposure) %>%
+  summarise(
+    broom::tidy(
+      aov(result_exposure ~ age_cat + distance_to_rh_hf_sampl)
+    )
+  )
+  # ggpubr::ggline(
+  #   x = "age_cat",
+  #   y = "result_exposure",
+  #   fill = "distance_to_rh_hf_sampl",
+  #   add = c("mean_se", "dotplot")
+  # ) +
+  # facet_grid(
+  #   vars(ffi_is_district),
+  #   vars(exposure)
+  # )
+```
 
 ```{r}
 sero_timeofmalaria_district_distance_rh_hf_sampling <- seropositivy_summarise(

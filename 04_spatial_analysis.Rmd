@@ -75,6 +75,7 @@ ffi_prevalence_by_household <- ffi_total %>%
     )
   ) %>% 
   group_by(
+    ffi_is_district,
     ffi_is_health_facility_name,
     ffi_is_community, 
     ffi_is_cod_com,
@@ -243,7 +244,8 @@ ffi_prevalence_by_household_sf <- ffi_prevalence_by_household %>%
 
 ffi_prevalence_kmeans <- ffi_prevalence_by_household_sf %>% 
   group_nest(
-    ffi_is_community
+    ffi_is_district,
+    #ffi_is_community
     #ffi_is_health_facility_name
   ) %>% 
   mutate(
@@ -353,7 +355,8 @@ ffi_w.getis <- ffi_prevalence_kmeans %>%
     LISA = map(LISA, as.numeric)
   ) %>% 
   select(
-    ffi_is_community,
+    ffi_is_district,
+    #ffi_is_community,
     #ffi_is_health_facility_name,
     type_plasmodium:LISA_label_orig
   ) %>% 
@@ -481,6 +484,7 @@ plot_getis_recent
 ggsave("02_output/plots/map_getis_lisa_recent.png",
        plot_getis_recent,
        dpi = 400,
+       scale = 1.2,
        device = grDevices::png)
 ```
 
@@ -525,6 +529,7 @@ plot_getis_historical
 ggsave("02_output/plots/map_getis_lisa_historical.png",
        plot_getis_historical,
        dpi = 400,
+       scale = 1.2,
        device = grDevices::png)
 ```
 
