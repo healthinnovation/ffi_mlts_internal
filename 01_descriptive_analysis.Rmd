@@ -43,6 +43,8 @@ poblacion <- readRDS("./01_data/raw/poblacion_inei_2017.rds")
 
 # Format data
 
+## Individuals
+
 ```{r}
 ffi_total <- ffi_individual %>%
   full_join(
@@ -53,8 +55,24 @@ ffi_total <- ffi_individual %>%
     by = "ffi_is_code"
   )
 
+ffi_is_symp_top3 <- ffi_total %>%
+  pivot_longer(
+    cols = ffi_is_symp_month_head:ffi_is_symp_month_nosymptopm,
+    names_to = "ffi_is_symp",
+    values_to = "ffi_is_symp_ans"
+  ) %>% 
+  count(ffi_is_symp, ffi_is_symp_ans) %>% 
+  filter(ffi_is_symp_ans != 0,
+         ffi_is_symp != "ffi_is_symp_month_nosymptopm") %>%
+  slice_max(n, n = 3)
+
 ffi_total <- ffi_total %>%
   mutate(
+    ffi_is_district = fct_recode(
+      ffi_is_district,
+      "Indiana" = "INDIANA",
+      "Belen" = "BELEN"
+    ),
     age_cat = case_when(
       ffi_is_age_fixed >= 70 ~ "[70+)",
       ffi_is_age_fixed >= 60 ~ "[60-70)",
@@ -138,6 +156,41 @@ ffi_total <- ffi_total %>%
                                             "Student",
                                             "Motorcycle taxi driver",
                                             "Other")),
+    economic_activities2 = fct_collapse(
+      economic_activities,
+      "Forest Related" = c("Day labourer",
+                           "Wood extractor",
+                           "Fisherman",
+                           "Livestock farmer",
+                           "Farmer"),
+      "Housewife/student" = c("Housewife",
+                              "Student"),
+      "Others" = c("Motorcycle taxi driver",
+                   "Other")
+    ),
+    ffi_is_place_sleep = factor(ffi_is_place_sleep,
+                                labels = c("Inside the dwelling",
+                                           "Outside the dwelling",
+                                           "Don't Know / Don't Answer")),
+    ffi_is_mosq_net_freq = factor(ffi_is_mosq_net_freq,
+                                  levels = c(0:2, 99),
+                                  labels = c("Never",
+                                             "Every day",
+                                             "Sometimes",
+                                             "Don't Know / Don't Answer")),
+    across(
+      c(ffi_is_symp_month_head,
+        ffi_is_symp_month_musclejoint,
+        ffi_is_symp_month_general),
+      ~ factor(
+        .,
+        labels = c("No", "Yes")
+      )
+    ),
+    ffi_is_knowl_mal_inf = factor(ffi_is_knowl_mal_inf,
+                                  labels = c("I was diagnosed at the health facility",
+                                             "Because of symptoms",
+                                             "Other")),
     pv_exposure = case_when(
       pv_recent == "Negative" & pv_historic == "Negative" ~ "Negative",
       is.na(pv_recent) & is.na(pv_historic) ~ NA_character_,
@@ -156,6 +209,11 @@ ffi_total <- ffi_total %>%
     historical_exposure = case_when(
       pv_historic == "Negative" & pf_historic == "Negative" ~ "Negative",
       is.na(pv_historic) & is.na(pf_historic) ~ NA_character_,
+      TRUE ~ "Positive"
+    ),
+    any_pv_pf_exposure = case_when(
+      recent_exposure == "Negative" & historical_exposure == "Negative" ~ "Negative",
+      is.na(recent_exposure) & is.na(historical_exposure) ~ NA_character_,
       TRUE ~ "Positive"
     ),
     only_pv_exposure = case_when(
@@ -221,15 +279,25 @@ ffi_total <- ffi_total %>%
     across(c(pv_exposure:freedom_malaria_historic), factor)
   )
 
+
 labelled::var_label(ffi_total) <- list(
   ffi_is_district = "Districs",
   gender = "Gender",
-  age_cat = "Age",
+  ffi_is_age = "Age",
   education_level = "Education Level",
   economic_activities = "Economic Activities",
+  economic_activities2 = "Economic Activities",
+  ffi_is_trip_month = "Trip in the last month",
   ffi_is_place_shower	= "Usual places to bathe",
+  ffi_is_place_sleep = "Place to sleep last night",
   ffi_is_mosq_net = "Mosquito Net",
+  ffi_is_mosq_net_freq = "Frequency of Mosquito Net",
   ffi_is_malaria = "Ever had malaria",
+  ffi_is_fever_month = "History of fever in the last month",
+  ffi_is_knowl_mal_inf = "Knowledge of whether it was malaria",
+  ffi_is_symp_month_head = "Symptoms or signs in the last month: Headache",
+  ffi_is_symp_month_musclejoint = "Symptoms or signs in the last month: Muscle or joint pain",
+  ffi_is_symp_month_general = "Symptoms or signs in the last month: General malaise",
   pf_recent = "Recent P. Falciparum",
   pf_historic = "Historical P. Falciparum",
   pv_recent = "Recent P. Vivax",
@@ -239,153 +307,43 @@ labelled::var_label(ffi_total) <- list(
 )
 ```
 
-# Table descriptive
+## Household
 
 ```{r}
-library(gtsummary)
-
-fisher.test.simulate.p.values <- function(data, variable, by, ...) {
-  result <- list()
-  test_results <- stats::fisher.test(data[[variable]], data[[by]], simulate.p.value = TRUE)
-  result$p <- test_results$p.value
-  result$test <- test_results$method
-  result
-}
-```
-
-## Table for district
-
-```{r}
-table_1 <- ffi_total %>%
-  select(
-    ffi_is_district,
-    gender,
-    age_cat,
-    education_level,
-    economic_activities,
-    ffi_is_place_shower,
-    ffi_is_mosq_net,
-    ffi_is_malaria,
-    pf_recent:pv_historic
-  ) %>%
-  drop_na(pf_recent:pv_historic) %>% 
-  tbl_summary(
-    by = "ffi_is_district",
-    missing_text = "Missing",
-    type = all_dichotomous() ~ "categorical",
-    digits = everything() ~ c(0, 1)
-  ) %>%
-  add_n() %>%
-  add_overall(
-    last = TRUE,
-    digits = everything() ~ c(0, 1)
-  ) %>%
-  add_p(
-     test = list(all_categorical() ~ "fisher.test.simulate.p.values"),
-     pvalue_fun = scales::pvalue
-  ) %>% 
-  bold_p() %>%
-  modify_header(label = "**Variable**") %>%
-  bold_labels()
-  
-table_1
-```
-
-```{r eval=FALSE}
-table_1 %>%
-  as_flex_table() %>%
-  flextable::save_as_docx(path = "./02_output/reports/table1.docx")
-```
-
-## Table for Plasmodium and Exposure Time
-
-```{r}
-table2 <- ffi_total %>%
-  select(
-    gender,
-    age_cat,
-    education_level,
-    economic_activities,
-    ffi_is_place_shower,
-    ffi_is_mosq_net,
-    ffi_is_malaria,
-    pf_exposure,
-    pv_exposure,
-    recent_exposure,
-    historical_exposure
-  ) %>%
-  drop_na(pf_exposure, pv_exposure,
-          recent_exposure, historical_exposure) %>%
-  pivot_longer(
-    cols = pf_exposure:historical_exposure,
-    names_to = "exposure",
-    values_to = "result_exposure"
-  ) %>%
+ffi_household <- ffi_household %>% 
   mutate(
-    exposure = case_when(
-      exposure == "pv_exposure" ~ "P. Vivax Exposure",
-      exposure == "pf_exposure" ~ "P. Falciparum Exposure",
-      exposure == "recent_exposure" ~ "Recent Exposure",
-      exposure == "historical_exposure" ~ "Historical Exposure"
-      ),
-    exposure = factor(exposure,
-                      levels = c("P. Vivax Exposure",
-                                 "P. Falciparum Exposure",
-                                 "Recent Exposure",
-                                 "Historical Exposure"))
-  ) %>%
-  tbl_strata(
-  strata = exposure,
-  .tbl_fun =
-    ~ .x %>%
-        tbl_summary(
-          by = result_exposure,
-          missing_text = "Missing",
-          type = all_dichotomous() ~ "categorical",
-          digits = everything() ~ c(0, 1)
-        ) %>%
-        add_p(
-          test = list(all_categorical() ~ "fisher.test.simulate.p.values"),
-          pvalue_fun = scales::pvalue
-        ) %>%
-        bold_p() %>%
-        modify_header(label = "**Variable**") %>%
-        bold_labels() 
-  ) 
+    ffi_h_district = fct_recode(
+      ffi_h_district,
+      "Indiana" = "INDIANA",
+      "Belen" = "BELEN"
+    ),
+    ffi_h_type = factor(ffi_h_type,
+                        labels = c("HOUSE TYPE A: House without walls, with or without wooden floor",
+                                   "HOUSE TYPE B: House that has one, two or three walls without completely enclosing a room, with or without wooden floor",
+                                   "HOUSE TYPE C: House that has at least one room enclosed, with or without wooden floor",
+                                   "HOUSE TYPE D: Completely enclosed house, with or without wooden floor")),
+    ffi_h_sprayed = factor(ffi_h_sprayed,
+                           labels = c("No", "Yes",
+                                      "Don't know / No answer")),
+    ffi_h_watersource = factor(ffi_h_watersource,
+                               levels = c(1:6, 88, 99),
+                               labels = c("Drinking water inside the house",
+                                          "Drinking water outside the house",
+                                          "Well",
+                                          "Public well",
+                                          "River or stream",
+                                          "Rainwater",
+                                          "Other",
+                                          "Don't know/No answer"))
+  )
 
-table2_overall <- ffi_total %>%
-  select(
-    gender,
-    age_cat,
-    education_level,
-    economic_activities,
-    ffi_is_place_shower,
-    ffi_is_mosq_net,
-    ffi_is_malaria
-  ) %>%
-  tbl_summary(
-    missing_text = "Missing",
-    type = all_dichotomous() ~ "categorical",
-    digits = everything() ~ c(0, 1)
-  ) %>%
-  modify_header(
-    label = "**Variable**"
-  ) %>%
-  bold_labels() %>%
-  modify_spanning_header(stat_0 ~ "**Overall**")
-
-table2 <- tbl_merge(
-  tbls = list(table2, table2_overall),
-  tab_spanner = FALSE
+labelled::var_label(ffi_household) <- list(
+  ffi_h_district = "District",
+  ffi_h_mti = "Insecticide-treated mosquito nets",
+  ffi_h_type = "Type of house",
+  ffi_h_sprayed = "Househould sprayed with insecticides in the last 12 months by the ministry of health",
+  ffi_h_watersource = "Main source of water for human consumption (food preparation)"
 )
-
-table2
-```
-
-```{r eval=FALSE}
-table2 %>%
-  as_flex_table() %>%
-  flextable::save_as_docx(path = "./02_output/reports/table2.docx")
 ```
 
 
@@ -557,16 +515,26 @@ ffi_total <- ffi_total %>%
                                                 "Distant", "Extra Distant"))
   ) %>% 
   ungroup()
+
+
+labelled::var_label(ffi_total) <- list(
+  distance_to_rh_hf_sampl = "Distance Category to Regional Hospital and Health Facilities"
+)
 ```
 
 # Distance Group about communities (Method Census)
 
 ```{r}
-comunidades_info_total <- readRDS("01_data/raw/Información poblacional comunidades.RData")
+comunidades_info_total <- readRDS("01_data/raw/Información poblacional comunidades.RData") %>% 
+  st_as_sf()
+
+st_geometry(comunidades_info_total[comunidades_info_total$MNOMCP == "CABO PANTOJA", ]) <-
+  st_sfc(st_point(c(-73.248636296, -3.777654358)))
+
 
 comunidades_info_total <- comunidades_info_total %>% 
   mutate(
-    geometry = case_when(
+    geometry2 = case_when(
       MNOMCP == "8 DE DICIEMBRE" ~ st_cast(
         st_sfc(st_point(c(-73.248636296, 
                           -3.777654358))), 
@@ -582,9 +550,22 @@ comunidades_info_total <- comunidades_info_total %>%
                           -3.558536667))), 
         "GEOMETRY"
         ),
-      TRUE ~ st_cast(geometry, "GEOMETRY"))
+      TRUE ~ st_cast(geometry, "GEOMETRY")
+      )
   )
   
+comunidades_info_total <- comunidades_info_total %>% 
+  mutate(
+    geometry = ifelse(
+      MNOMCP == "8 DE DICIEMBRE", st_sfc(st_point(c(-73.248636296, 
+                                                    -3.777654358))),
+      ifelse(MNOMCP == "CABO LOPEZ", st_sfc(st_point(c(-73.253457539, 
+                                                       -3.781405681))),
+             ifelse(MNOMCP == "TIMICURO GRANDE",
+                    st_sfc(st_point(c(-73.023866667, 
+                          -3.558536667))), geometry)
+  )
+
 
 comunidades_info_adic <- comunidades_info_total %>% 
   filter(st_is_empty(geometry)) %>% 
@@ -746,6 +727,226 @@ ffi_total <- ffi_total %>%
 saveRDS(ffi_total, 
         file = "01_data/processed/ffi_total.rds")
 ```
+
+
+
+
+
+# Table descriptive
+
+```{r}
+library(gtsummary)
+
+fisher.test.simulate.p.values <- function(data, variable, by, ...) {
+  result <- list()
+  test_results <- stats::fisher.test(data[[variable]], data[[by]], simulate.p.value = TRUE)
+  result$p <- test_results$p.value
+  result$test <- test_results$method
+  result
+}
+```
+
+## Table for district
+
+### Individuals
+
+```{r}
+table_1_ind <- ffi_total %>%
+  select(
+    ffi_is_district,
+    gender,
+    ffi_is_age,
+    education_level,
+    economic_activities2,
+    ffi_is_trip_month,
+    ffi_is_place_shower,
+    ffi_is_place_sleep,
+    ffi_is_mosq_net,
+    ffi_is_mosq_net_freq,
+    ffi_is_fever_month,
+    ffi_is_malaria,
+    ffi_is_symp_month_head,
+    ffi_is_symp_month_musclejoint,
+    ffi_is_symp_month_general,
+    pf_exposure,
+    pv_exposure,
+    distance_to_rh_hf_sampl
+    # ffi_is_knowl_mal_inf,
+    # pf_recent:pv_historic
+  ) %>%
+  #drop_na(pf_recent:pv_historic) %>% 
+  tbl_summary(
+    by = "ffi_is_district",
+    missing = "no",
+    # missing_text = "Missing",
+    #type = all_dichotomous() ~ "categorical",
+    digits = everything() ~ c(0, 1)
+  ) %>%
+  add_n() %>%
+  add_overall(
+    last = TRUE,
+    digits = everything() ~ c(0, 1)
+  ) %>%
+  add_p(
+     test = list(all_categorical() ~ "fisher.test.simulate.p.values"),
+     pvalue_fun = scales::pvalue
+  ) %>% 
+  bold_p() %>%
+  modify_header(label = "**Variable**") %>%
+  bold_labels()
+  
+table_1_ind
+```
+
+```{r eval=FALSE}
+table_1_ind %>%
+  as_flex_table() %>%
+  flextable::save_as_docx(path = "./02_output/reports/table1_ind.docx")
+```
+
+### Households
+
+
+```{r}
+table_1_household <- ffi_household %>%
+  select(
+    ffi_h_district,
+    ffi_h_mti,
+    ffi_h_type,
+    ffi_h_sprayed,
+    ffi_h_watersource
+  ) %>%
+  tbl_summary(
+    by = "ffi_h_district",
+    missing_text = "Missing",
+    type = all_dichotomous() ~ "categorical",
+    digits = everything() ~ c(0, 1)
+  ) %>%
+  add_n() %>%
+  add_overall(
+    last = TRUE,
+    digits = everything() ~ c(0, 1)
+  ) %>%
+  add_p(
+     test = list(all_categorical() ~ "fisher.test.simulate.p.values"),
+     pvalue_fun = scales::pvalue
+  ) %>% 
+  bold_p() %>%
+  modify_header(label = "**Variable**") %>%
+  bold_labels()
+  
+table_1_household
+```
+
+
+```{r eval=FALSE}
+table_1_household %>%
+  as_flex_table() %>%
+  flextable::save_as_docx(path = "./02_output/reports/table_1_household.docx")
+```
+
+## Table for Plasmodium and Exposure Time
+
+```{r}
+table2_ind <- ffi_total %>%
+  select(
+    ffi_is_district,
+    gender,
+    ffi_is_age,
+    economic_activities2,
+    ffi_is_trip_month,
+    ffi_is_place_shower,
+    ffi_is_mosq_net,
+    ffi_is_fever_month,
+    ffi_is_symp_month_head,
+    ffi_is_symp_month_musclejoint,
+    ffi_is_symp_month_general,
+    ffi_is_malaria,
+    distance_to_rh_hf_sampl,
+    pf_recent:pv_historic
+  ) %>%
+  drop_na(pf_recent:pv_historic) %>%
+  pivot_longer(
+    cols = pf_recent:pv_historic,
+    names_to = "exposure",
+    values_to = "result_exposure"
+  ) %>%
+  mutate(
+    exposure = case_when(
+      exposure == "pf_recent" ~ "P. Falciparum Recent",
+      exposure == "pf_historic" ~ "P. Falciparum Historical",
+      exposure == "pv_recent" ~ "P. Vivax Recent",
+      exposure == "pv_historic" ~ "P. Vivax Historical"
+      ),
+    exposure = factor(exposure,
+                      levels = c("P. Falciparum Recent",
+                                 "P. Falciparum Historical",
+                                 "P. Vivax Recent",
+                                 "P. Vivax Historical"))
+  ) %>%
+  tbl_strata(
+  strata = exposure,
+  .tbl_fun =
+    ~ .x %>%
+        tbl_summary(
+          by = result_exposure,
+          missing = "no",
+          #missing_text = "Missing",
+          #type = all_dichotomous() ~ "categorical",
+          digits = everything() ~ c(0, 1)
+        ) %>%
+        add_p(
+          test = list(all_categorical() ~ "fisher.test.simulate.p.values"),
+          pvalue_fun = scales::pvalue
+        ) %>%
+        bold_p() %>%
+        modify_header(label = "**Variable**") %>%
+        bold_labels() 
+  ) 
+
+table2_ind_overall <- ffi_total %>%
+  select(
+    ffi_is_district,
+    gender,
+    ffi_is_age,
+    economic_activities2,
+    ffi_is_trip_month,
+    ffi_is_place_shower,
+    ffi_is_mosq_net,
+    ffi_is_fever_month,
+    ffi_is_symp_month_head,
+    ffi_is_symp_month_musclejoint,
+    ffi_is_symp_month_general,
+    ffi_is_malaria,
+    distance_to_rh_hf_sampl
+  ) %>%
+  tbl_summary(
+    missing = "no",
+    # missing_text = "Missing",
+    # type = all_dichotomous() ~ "categorical",
+    digits = everything() ~ c(0, 1)
+  ) %>%
+  modify_header(
+    label = "**Variable**"
+  ) %>%
+  bold_labels() %>%
+  modify_spanning_header(stat_0 ~ "**Overall**")
+
+table2_ind <- tbl_merge(
+  tbls = list(table2_ind, table2_ind_overall),
+  tab_spanner = FALSE
+)
+
+table2_ind
+```
+
+```{r eval=FALSE}
+table2_ind %>%
+  as_flex_table() %>%
+  flextable::save_as_docx(path = "./02_output/reports/table2_ind.docx")
+```
+
+
 
 
 # Plots
