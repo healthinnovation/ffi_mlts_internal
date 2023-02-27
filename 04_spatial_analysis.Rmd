@@ -433,6 +433,105 @@ w.getis_sf <- ffi_w.getis %>%
 ```
 
 
+```{r}
+library(gtsummary)
+
+fisher.test.simulate.p.values <- function(data, variable, by, ...) {
+  result <- list()
+  test_results <- stats::fisher.test(data[[variable]], data[[by]], simulate.p.value = TRUE)
+  result$p <- test_results$p.value
+  result$test <- test_results$method
+  result
+}
+```
+
+```{r}
+
+ffi_w.getis
+
+labelled::var_label(ffi_w.getis) <- list(
+  prevalence_historical_exposure = "Historical Exposure",
+  prevalence_pf_historic = "P. falciparum historical",
+  prevalence_pf_recent = "P. falciparum recent",
+  prevalence_pv_historic  = "P. vivax historical",
+  prevalence_pv_recent = "P. vivax recent",
+  prevalence_recent_exposure = "Recent Exposure"
+)
+
+ffi_w.getis <- ffi_w.getis %>% 
+  mutate(
+    type_plasmodium = factor(type_plasmodium,
+                             levels = c("prevalence_historical_exposure",
+                                        "prevalence_pf_historic",
+                                        "prevalence_pv_historic",
+                                        "prevalence_recent_exposure",
+                                        "prevalence_pf_recent",
+                                        "prevalence_pv_recent"),
+                             labels = c("Historical Exposure",
+                                        "P. falciparum historical",
+                                        "P. vivax historical",
+                                        "Recent Exposure",
+                                        "P. falciparum recent",
+                                        "P. vivax recent"))
+  )
+
+
+tab_getis_strata <- ffi_w.getis %>%
+  select(ffi_is_district, type_plasmodium, LISA_clust) %>% 
+  # pivot_wider(
+  #   names_from = type_plasmodium,
+  #   values_from = LISA_clust
+  # ) %>% 
+  # select("prevalence_pf_recent", 
+  #        "prevalence_pv_recent",
+  #        "prevalence_recent_exposure") %>% 
+  tbl_strata(
+  strata = type_plasmodium,
+  .tbl_fun =
+    ~ .x %>%
+        tbl_summary(
+          by = ffi_is_district,
+          digits = everything() ~ c(0, 1)
+        ) %>%
+        add_p(
+          test = list(all_categorical() ~ "fisher.test.simulate.p.values"),
+          pvalue_fun = scales::pvalue
+        ) %>%
+        bold_p() %>%
+        modify_header(label = "**Variable**") %>%
+        bold_labels() 
+  ) 
+  
+tab_getis_strata %>%
+  as_flex_table() %>%
+  flextable::save_as_docx(path = "./02_output/reports/tab_getis_strata.docx")
+  
+tab_getis_general <- ffi_w.getis %>%
+  select(type_plasmodium, LISA_clust) %>% 
+  gtsummary::tbl_summary(
+    by = type_plasmodium,
+    digits = everything() ~ c(0, 1)
+  ) %>% 
+  add_n() %>%
+  add_overall(
+    last = TRUE,
+    digits = everything() ~ c(0, 1)
+  ) %>%
+  add_p(
+     test = list(all_categorical() ~ "fisher.test.simulate.p.values"),
+     pvalue_fun = scales::pvalue
+  ) %>% 
+  bold_p() %>%
+  modify_header(label = "**Variable**") %>%
+  bold_labels() %>% 
+  modify_spanning_header(stat_0 ~ "**Overall**")
+
+tab_getis_general %>%
+  as_flex_table() %>%
+  flextable::save_as_docx(path = "./02_output/reports/tab_getis_general.docx")
+
+```
+
 
 ```{r}
 data("Peru", package = "innovar")
